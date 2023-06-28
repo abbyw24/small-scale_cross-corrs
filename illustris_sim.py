@@ -8,7 +8,7 @@ import astropy.units as u
 import os
 import sys
 
-from corrfunc_ls import compute_3D_ls
+from corrfunc_ls import compute_3D_ls_auto
 
 class IllustrisSim():
 
@@ -27,7 +27,7 @@ class IllustrisSim():
             print("not a known simulation")
     
 
-    def set_snapshot(self, snapshot=None, redshift=None, unit=u.Mpc):
+    def set_snapshot(self, snapshot=None, redshift=None):
         if snapshot!=None and redshift==None:
             assert snapshot in self.snapshots, "snapshot not found"
             self.snapshot = snapshot
@@ -52,17 +52,8 @@ class IllustrisSim():
         self.dm_pos = dm_pos.to(unit)
     
 
-    def compute_xi(self, randmult, rmin, rmax, nbins, logbins=True, periodic=True, nthreads=12, prints=False):
-        self.randmult = randmult
-        self.rmin = rmin
-        self.rmax = rmax
-        self.nbins = nbins
-        self.logbins = logbins
-        self.periodic = periodic
-        self.nthreads = nthreads
-
-        if not hasattr(self, 'dm_pos'):
-            self.load_dm_pos()
-        self.ravg, self.xi = compute_3D_ls(self.dm_pos.value, randmult, rmin, rmax, nbins,
-                                            logbins=logbins, periodic=periodic, nthreads=nthreads, prints=prints)
+    def load_gal_pos(self, snapshot=None, unit=u.Mpc):
+        snapshot = snapshot if snapshot else self.snapshot
+        gal_pos = il.groupcat.loadSubhalos(self.basepath, snapshot, fields=['SubhaloPos']) * u.kpc
+        self.gal_pos = gal_pos.to(unit)
         

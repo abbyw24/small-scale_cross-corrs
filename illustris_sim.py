@@ -20,7 +20,7 @@ class IllustrisSim():
         if sim=='Illustris-3':
             self.snapshots = []
             self.redshifts = []
-        elif sim=='TNG300-3':
+        elif sim[:-2]=='TNG300':  # -2 to include all resolutions
             self.snapshots = [0, 4, 17, 33, 40, 50, 67, 99]
             self.redshifts = [20.05, 10., 5., 2., 1.5, 1., 0.5, 0.]
         else:
@@ -43,7 +43,10 @@ class IllustrisSim():
         assert hasattr(self, 'snapshot') and hasattr(self, 'redshift')
         self.snapdir = os.path.join(self.basepath, f'snapdir_{self.snapshot:03d}')
         if not os.path.exists(self.snapdir):
-            print("snapshot directory not found")
+            print(f"{self.sim}: snapshot ({self.snapshot:03d}) not found")
+        self.groupdir = os.path.join(self.basepath, f'groups_{self.snapshot:03d}')
+        if not os.path.exists(self.groupdir):
+            print(f"{self.sim}: group catalog ({self.snapshot:03d}) not found")
     
 
     def load_dm_pos(self, snapshot=None, unit=u.Mpc):
@@ -52,8 +55,29 @@ class IllustrisSim():
         self.dm_pos = dm_pos.to(unit)
     
 
-    def load_gal_pos(self, snapshot=None, unit=u.Mpc):
+    def load_galaxies(self, snapshot=None, minstars=100, minstarmass=0, prints=False):
         snapshot = snapshot if snapshot else self.snapshot
-        gal_pos = il.groupcat.loadSubhalos(self.basepath, snapshot, fields=['SubhaloPos']) * u.kpc
-        self.gal_pos = gal_pos.to(unit)
-        
+        fields = ['SubhaloFlag','SubhaloPos','SubhaloMass','SubhaloMassType', 'SubhaloLenType']
+        subhalos = il.groupcat.loadSubhalos(self.basepath, snapshot, fields=fields)
+        if prints:
+            print(f"loaded {subhalos['count']} subhalos for {self.sim}")
+        # remove any subhalos flagged as non-cosmological in origin, unpack, and give proper units
+        subhalo_idx = subhalos['SubhaloFlag']
+        # (x,y,z) coordinate of each subhalo:
+        subhalo_pos = (subhalos['SubhaloPos'][subhalo_idx] * u.kpc).to(u.Mpc)
+        # total mass of each subhalo:
+        total_mass = subhalos['SubhaloMass'][subhalo_idx] * 1e10 * u.M_sun
+        # total mass of each particle type in each subhalo:
+        mass_types = subhalos['SubhaloMassType'][subhalo_idx] * 1e10 * u.Msun
+        # total number of each particle type in each subhalo:
+        len_types = subhalos['SubhaloLenType'][subhalo_idx]
+        if prints:
+            print(f"removed {np.sum(~subhalo_idx)} flagged subhalos")
+        # galaxies -> take only subhalos with non-zero star mass
+        #   and with at least 100 star particles (following Barreira et al 2021)
+        gal_idx = np.where((mass_types[:,4].value>minstarmass) & (len_types[:,4]>minstars))
+        self.gal_pos = subhalo_pos[gal_idx]
+        self.gal_mass = total_mass[gal_idx]
+        self.gal_mass_types = mass_types[gal_idx]
+        self.gal_len_types = len_types[gal_idx]
+        print(f"{self.sim}: loaded {len(self.gal_pos)} subhalos with > {minstars:0d} stars and star mass > {minstarmass:.0f}")

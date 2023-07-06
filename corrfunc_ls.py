@@ -30,19 +30,21 @@ def compute_3D_ls_auto(data, randmult, rmin, rmax, nbins, logbins=True, periodic
     x, y, z = data_set.T
     x_rand, y_rand, z_rand = rand_set.T
 
+    if prints:
+        print("starting computation", flush=True)
     dd_res = DD(1, nthreads, r_edges, x, y, z, boxsize=boxsize, periodic=periodic, output_ravg=True)
     if prints:
-        print("DD calculated")
+        print("DD calculated", flush=True)
     dr_res = DD(0, nthreads, r_edges, x, y, z, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
     if prints:
-        print("DR calculated")
+        print("DR calculated", flush=True)
     
     if rr_fn:
         rr_res = np.load(rr_fn, allow_pickle=True)
     else:
         rr_res = DD(1, nthreads, r_edges, x_rand, y_rand, z_rand, boxsize=boxsize, periodic=periodic)
     if prints:
-        print("RR calculated")
+        print("RR calculated", flush=True)
 
     dd = np.array([x['npairs'] for x in dd_res], dtype=float)
     dr = np.array([x['npairs'] for x in dr_res], dtype=float)
@@ -50,7 +52,7 @@ def compute_3D_ls_auto(data, randmult, rmin, rmax, nbins, logbins=True, periodic
 
     results_xi = Corrfunc.utils.convert_3d_counts_to_cf(nd, nd, nr, nr, dd, dr, dr, rr)
     if prints:
-        print("3d counts converted to cf")
+        print("3d counts converted to cf", flush=True)
 
     return r_avg, results_xi
 

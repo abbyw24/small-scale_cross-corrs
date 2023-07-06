@@ -27,6 +27,7 @@ def compute_xi_auto_illustris(sim_name, redshift, data_type, randmult, rmin, rma
         data = sim.gal_pos.value
 
     if subsample_nx:
+        print(f"subsampling 1/{subsample_nx}th of the data", flush=True)
         data = tools.get_subsample(data, subsample_nx)
     
     ravg, xi = compute_3D_ls_auto(data, randmult, rmin, rmax, nbins, logbins=logbins, periodic=periodic, nthreads=nthreads, prints=prints)
@@ -37,7 +38,7 @@ def compute_xi_auto_illustris(sim_name, redshift, data_type, randmult, rmin, rma
     
     if save_fn:
         np.save(save_fn, result)
-        print(f"saved result to {save_fn}")
+        print(f"saved result to {save_fn}", flush=True)
     if return_res:
         return result
 
@@ -47,7 +48,7 @@ def main():
     s = time.time()
 
     # params for Illustris simulation
-    sim_name = 'TNG300-3'
+    sim_name = 'TNG300-2'
     redshifts = [0.]
     data_type = 'dm'
 
@@ -56,7 +57,7 @@ def main():
     rmin = 0.1
     rmax = 50.  
     nbins = 20
-    subsample_nx = None
+    subsample_nx = 100
     nthreads = 24
 
     save_dir = '/scratch/08811/aew492/small-scale_cross-corrs/xi'
@@ -65,10 +66,10 @@ def main():
     for redshift in redshifts:
         save_fn = os.path.join(save_dir, f'xi_{data_type}_{sim_name}_z-{redshift:.2f}{subsample_tag}.npy')
         compute_xi_auto_illustris(sim_name, redshift, data_type, randmult, rmin, rmax, nbins,
-                                subsample_nx=subsample_nx, nthreads=nthreads, save_fn=save_fn, return_res=False)
+                                subsample_nx=subsample_nx, nthreads=nthreads, save_fn=save_fn, return_res=False, prints=True)
     
     total_time = time.time() - s
-    print(f"total time: {datetime.timedelta(seconds=total_time)}")
+    print(f"total time: {datetime.timedelta(seconds=total_time)}", flush=True)
 
 
 if __name__=='__main__':

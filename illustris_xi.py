@@ -23,7 +23,7 @@ def compute_xi_auto_illustris(sim_name, redshift, data_type, randmult, rmin, rma
         data = sim.dm_pos.value
     else:
         assert data_type=='gal', "unknown data_type!"
-        sim.load_gal_pos()
+        sim.load_galaxies()
         data = sim.gal_pos.value
 
     if subsample_nx:
@@ -48,8 +48,8 @@ def main():
     s = time.time()
 
     # params for Illustris simulation
-    sim_name = 'TNG300-2'
-    redshifts = [0.]
+    sim_name = 'TNG300-3'
+    redshifts = [1.5, 1., 0.5, 0.2, 0.1, 0.]
     data_type = 'dm'
 
     # params for Corrfunc

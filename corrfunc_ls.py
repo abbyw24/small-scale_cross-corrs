@@ -94,40 +94,44 @@ def compute_2D_ls_auto(data, randmult, rpmin, rpmax, nrpbins, pimax, logbins=Tru
 
 
 # CROSS-CORRELATIONS #
-def compute_3D_ls_cross(data, tracers, randmult, rmin, rmax, nbins, logbins=True, periodic=True, nthreads=12, rr_fn=None, prints=False):
+def compute_3D_ls_cross(d1, d2, randmult, rmin, rmax, nbins, logbins=True, periodic=True, nthreads=12, rr_fn=None, prints=False):
     """Estimate the 3D 2-pt. cross-correlation function."""
 
     # set up data: random set goes with tracers
-    dataforcf = set_up_cf_data(data, randmult, rmin, rmax, nbins, logbins=logbins, dtype='float32')
-    r_edges, r_avg, ndata, boxsized, _, _, data_set = dataforcf.values()
-    tracersforcf = set_up_cf_data(tracers, randmult, rmin, rmax, nbins, logbins=logbins, dtype='float32')
-    r_edges, r_avg, ntracers, boxsizet, nr, rand_set, tracer_set = tracersforcf.values()
-    assert boxsized==boxsizet, "data and tracer set must have the same boxsize!"
+    d1forcf = set_up_cf_data(d1, randmult, rmin, rmax, nbins, logbins=logbins, dtype='float32')
+    r_edges, r_avg, nd1, boxsized1, _, _, d1_set = d1forcf.values()
+    d2forcf = set_up_cf_data(d2, randmult, rmin, rmax, nbins, logbins=logbins, dtype='float32')
+    r_edges, r_avg, nd2, boxsized2, nr, rand_set, d2_set = d2forcf.values()
+    assert boxsized1==boxsized2, "data sets must have the same boxsize!"
 
     # unpack
-    xd, yd, zd = data_set.T
-    xt, yt, zt = tracer_set.T
+    xd1, yd1, zd1 = d1_set.T
+    xd2, yd2, zd2 = d2_set.T
     x_rand, y_rand, z_rand = rand_set.T
 
-    dd_res = DD(0, nthreads, r_edges, xd, yd, zd, X2=xt, Y2=yt, Z2=zt, boxsize=boxsize, periodic=periodic, output_ravg=True)
+    d1d2_res = DD(0, nthreads, r_edges, xd1, yd1, zd1, X2=xd2, Y2=yd2, Z2=zd2, boxsize=boxsized1, periodic=periodic, output_ravg=True)
     if prints:
-        print("DD calculated")
-    dr_res = DD(0, nthreads, r_edges, xd, yd, zd, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
+        print("D1D2 calculated")
+    d1r_res = DD(0, nthreads, r_edges, xd1, yd1, zd1, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsized1, periodic=periodic)
     if prints:
-        print("DR calculated")
+        print("D1R calculated")
+    d2r_res = DD(0, nthreads, r_edges, xd2, yd2, zd2, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsized1, periodic=periodic)
+    if prints:
+        print("D2R calculated")
     
     if rr_fn:
         rr_res = np.load(rr_fn, allow_pickle=True)
     else:
-        rr_res = DD(1, nthreads, r_edges, x_rand, y_rand, z_rand, boxsize=boxsize, periodic=periodic)
+        rr_res = DD(1, nthreads, r_edges, x_rand, y_rand, z_rand, boxsize=boxsized1, periodic=periodic)
     if prints:
         print("RR calculated")
 
-    dd = np.array([x['npairs'] for x in dd_res], dtype=float)
-    dr = np.array([x['npairs'] for x in dr_res], dtype=float)
+    d1d2 = np.array([x['npairs'] for x in d1d2_res], dtype=float)
+    d1r = np.array([x['npairs'] for x in d1r_res], dtype=float)
+    d2r = np.array([x['npairs'] for x in d2r_res], dtype=float)
     rr = np.array([x['npairs'] for x in rr_res], dtype=float)
 
-    results_xi = Corrfunc.utils.convert_3d_counts_to_cf(ndata, ntracers, nr, nr, dd, dr, dr, rr)
+    results_xi = Corrfunc.utils.convert_3d_counts_to_cf(nd1, nd2, nr, nr, d1d2, d1r, d2r, rr)
     if prints:
         print("3d counts converted to cf")
 

@@ -15,7 +15,7 @@ class eBOSS_param:
     https://ui.adsabs.harvard.edu/abs/2017MNRAS.471.3955R/abstract
     '''
     def __init__(self, z=0, tracer_name='LRG',
-                 field_name=None, ns_field_name=None, get_bias=True):
+                 field_name=None, ns_field_name=None):
         
         self.tracer_names = ['CMASS', 'LRG', 'ELG', 'QSO']        
         self.z = z
@@ -24,14 +24,12 @@ class eBOSS_param:
         self.print_name_survey = '(e)BOSS'
         if tracer_name == 'CMASS':
             self.print_name = self.print_name[1:]
-        self._calc_params(get_bias=get_bias)
+        self._calc_params()
 
     
-    def _calc_params(self, get_bias=True):
+    def _calc_params(self):
         self._get_area()
         self._get_density()
-        if get_bias:
-            self.bias = self.tracer_bias()
     
     def _get_area(self, field_name=None):
         
@@ -200,7 +198,7 @@ class DESI_param:
     table 2.3 & 2.6
     deltaz~5e-4 p.8
     '''
-    def __init__(self, z=0, tracer_name='LRG', get_bias=True):
+    def __init__(self, z=0, tracer_name='LRG'):
         
     
         self.tracer_names = ['BGS', 'LRG', 'ELG', 'QSO', 'LAF']        
@@ -210,13 +208,11 @@ class DESI_param:
         if tracer_name == 'LAF':
             self.print_name = 'DESI QSO'
         self.print_name_survey = 'DESI'
-        self._calc_params(get_bias=get_bias)
+        self._calc_params()
     
-    def _calc_params(self, get_bias=True):
+    def _calc_params(self):
         self._get_area()
         self._get_density()
-        if get_bias:
-            self.bias = self.tracer_bias()
     
     
     def _get_area(self):

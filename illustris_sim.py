@@ -12,74 +12,66 @@ import os
 import sys
 
 from corrfunc_ls import compute_3D_ls_auto
+from survey_params_gal import eBOSS_param, DESI_param
 
-class IllustrisSim():
+class TNGSim():
     """
     Class to manage Illustris-TNG simulations and data most relevant for testing small-scale cross-correlations.
     Works with a single snapshot/redshift at a time.
     """
 
     def __init__(self, sim, snapshot=None, redshift=None, scratch='/scratch/08811/aew492'):
+
+        # make sure we have passed either a snapshot or a redshift
+        assert (snapshot is not None and redshift is None) or (snapshot is None and redshift is not None), \
+            "must pass either snapshot or redshift"
         
         self.sim = str(sim)
         self.basepath = os.path.join(scratch, f'small-scale_cross-corrs/{sim}/output')
-
-        if sim=='Illustris-3':
-            self.snapshots = []
-            self.redshifts = []
-        elif sim[:-2]=='TNG300':  # -2 to include all resolutions
+        if self.sim[:-2] == 'TNG300':
             self.snapshots = [0, 4, 17, 33, 40, 50, 67, 84, 91, 99]
             self.redshifts = [20.05, 10., 5., 2., 1.5, 1., 0.5, 0.2, 0.1, 0.]
+            self.boxsize = 205 * (u.Mpc / cu.littleh)
         else:
-            print("not a known simulation")
+            assert False, "unknown simulation"
         
-        # if a snapshot has been passed, go ahead and set the snapshot:
-        if (snapshot!=None) or (redshift!=None):
-            self.set_snapshot(snapshot, redshift)
+        self._set_snapshot(snapshot, redshift)
         
-        self.sim_tag = self.sim+f', z={self.redshift:.2f}' if hasattr(self, 'snapshot') else self.sim
+        self.sim_tag = self.sim+f', z={self.redshift:.2f}'
 
     
     """ SNAPSHOTS <--> REDSHIFTS """
 
-    def get_redshift(self, snapshot):
-        return self.redshifts[self.snapshots.index(snapshot)]
-    
-    def get_snapshot(self, redshift):
-        return self.snapshots[self.redshifts.index(redshift)]
-
-    def set_snapshot(self, snapshot=None, redshift=None):
+    def _set_snapshot(self, snapshot=None, redshift=None):
         """
         Set the simulation snapshot by either snapshot number or corresponding redshift.
         If nothing is passed, check that the simulation already has a `snapshot` attribute.
         """
-        if snapshot!=None and redshift==None:
+        if snapshot:
+            assert redshift is None
             assert snapshot in self.snapshots, "snapshot not found"
             self.snapshot = snapshot
-            self.redshift = self.get_redshift(snapshot)
-        elif redshift!=None and snapshot==None:
+            self.redshift = self.redshifts[self.snapshots.index(snapshot)]
+        else:
+            assert snapshot is None
             assert redshift in self.redshifts, "snapshot not found"
             self.redshift = redshift
-            self.snapshot = self.get_snapshot(redshift)
-        else:
-            assert hasattr(self, 'snapshot'), "Must pass a snapshot if the simulation does not already have one"
+            self.snapshot = self.snapshots[self.redshifts.index(redshift)]
     
     
     """
     GROUP CATALOGS:
 
-        load_subfind_subhalos() : loads the raw requested field data from the group catalog.
+        _load_subfind_subhalos() : loads the raw requested field data from the group catalog.
 
-        load_[SOME_FIELD]() : loads the requested field, stored with proper units.
+        [SOME_FIELD]() : returns the requested field with proper units.
     
     """
 
-    def load_subfind_subhalos(self, fields=['SubhaloPos','SubhaloMassType','SubhaloLenType','SubhaloSFR'],
+    def _load_subfind_subhalos(self, fields=['SubhaloPos','SubhaloMassType','SubhaloLenType','SubhaloSFR'],
                                 remove_flagged=True, prints=False):
         """
-        Load the requested fields of this sim's Subfind subhalos,
-        (by default removing any flagged as non-cosmological in origin).
-        If a snapshot or redshift is passed, this overrides any previously set snapshot.
+        Load the requested fields of this sim's Subfind subhalos (by default removing any flagged as non-cosmological in origin).
         """
 
         # get existing subhalo table or create new table
@@ -114,45 +106,76 @@ class IllustrisSim():
         else:
             if prints:
                 print("requested fields already loaded!")
-
-    def load_stellar_mass(self):
-        self.load_subfind_subhalos(fields=['SubhaloMassType'])
-        self.stellar_mass = self.subhalo_info['SubhaloMassType'][:,4] * 1e10 * u.M_sun / cu.littleh # 4 corresponds to star particles
     
-    def load_SFR(self):
-        self.load_subfind_subhalos(fields=['SubhaloSFR'])
-        self.SFR = self.subhalo_info['SubhaloSFR'] * u.M_sun / u.year
+    def subhalo_pos(self, unit=u.Mpc):
+        self._load_subfind_subhalos(fields=['SubhaloPos'])
+        return (self.subhalo_info['SubhaloPos'] * u.kpc).to(unit)
+
+    def stellar_mass(self):
+        self._load_subfind_subhalos(fields=['SubhaloMassType'])
+        return self.subhalo_info['SubhaloMassType'][:,4] * 1e10 * u.M_sun / cu.littleh # 4th col corresponds to star particles
+    
+    def SFR(self):
+        self._load_subfind_subhalos(fields=['SubhaloSFR'])
+        return self.subhalo_info['SubhaloSFR'] * u.M_sun / u.year
     
 
     """ SNAPSHOTS """
 
-    def load_dm_pos(self, unit=u.Mpc):
+    def dm_pos(self, unit=u.Mpc):
         """
         Load the (x,y,z) comoving coordinates of all DM particles.
         If a snapshot or redshift is passed, this overrides any previously set snapshot.
         """
         dm_pos = il.snapshot.loadSubset(self.basepath, self.snapshot, 'dm', ['Coordinates']) * u.kpc
-        self.dm_pos = dm_pos.to(unit)
+        return dm_pos.to(unit)
+    
 
+    """ SURVEY EMULATION """
 
-    def load_galaxies(self, minstars=100, minstarmass=0, prints=False, return_gals=False):
-        self.load_subfind_subhalos()
+    def survey_params(self, survey_name, tracer_name):
+        """
+        Calculate the target galaxy number density (function of redshift) for a specific survey, using survey_params_gal.py.
+        """
+        if survey_name == 'eBOSS':
+            return eBOSS_param(z=self.redshift, tracer_name=tracer_name)
+        else:
+            assert survey_name == 'DESI', "'survey_name' must be 'eBOSS' or 'DESI'"
+            return DESI_param(z=self.redshift, tracer_name=tracer_name)
+    
+    def gal_idx(self, tracer_name, survey='DESI', sSFR_cutval=-9.09, n=None, prints=False):
+        """
+        Make cuts in subhalo sSFR and stellar mass to select for LRGs/ELGs and reach a target galaxy number density,
+        as outlined in Sullivan, Prijon, & Seljak (2023).
+        Option to manually input target number density, otherwise compute as a function of `tracer_name` and `survey` \
+        using survey_params().
 
-        # unpack values and give proper units:
-        subhalo_pos = (self.subhalo_info['SubhaloPos'] * u.kpc).to(u.Mpc)    # (x,y,z) coordinate of each subhalo
-        # total_mass = self.subhalo_info['SubhaloMass'] * 1e10 * u.M_sun      # total mass of each subhalo
-        mass_types = self.subhalo_info['SubhaloMassType'] * 1e10 * u.Msun   # total mass of each particle type in each subhalo
-        len_types = self.subhalo_info['SubhaloLenType']                     # total number of each particle type in each subhalo
-
-        # galaxies -> take only subhalos with non-zero star mass
-        #   and with at least 100 star particles (following Barreira et al 2021)
-        gal_idx = np.where((mass_types[:,4].value>minstarmass) & (len_types[:,4]>minstars))
-        self.gal_pos = subhalo_pos[gal_idx]
-        # self.gal_mass = total_mass[gal_idx]
-        self.gal_mass_types = mass_types[gal_idx]
-        self.gal_len_types = len_types[gal_idx]
+        S, P & S 2023 uses two different cutoff values for sSFR, log10(sSFR) =
+            1. -9.09 (https://arxiv.org/abs/2210.10068 using MilleniumTNG)
+            2. -9.23 (https://arxiv.org/abs/2011.05331 using TNG300-1)
+        """
+        # target number of galaxies = volume * number density
+        V = self.boxsize**3
+        if n:
+            n = n.to((cu.littleh / u.Mpc)**3) if hasattr(n, 'unit') else n * (cu.littleh / u.Mpc)**3
+            print(f"input number density: {n.value:.2e} (h/Mpc)^3")
+        else:
+            n = self.survey_params(survey, tracer_name).n_Mpc3 *  (cu.littleh / u.Mpc)**3
+            print(f"{tracer_name} number density for {survey} at z={self.redshift}: {n.value:.2e} (h/Mpc)^3 ")
+        target_N = int(V * n)
         if prints:
-            print(f"{self.sim_tag}: loaded {len(self.gal_pos)} subhalos with > {minstars:0d} stars and star mass > {minstarmass:.0f}")
-        if return_gals:
-            return dict(gal_pos=subhalo_pos[gal_idx], # gal_mass=total_mass[gal_idx],
-                        gal_mass_types=mass_types[gal_idx], gal_len_types=len_types[gal_idx])
+            print(f"target number of subhalos: {target_N}")
+        
+        # specific star formation rate (sSFR) = star formation rate per stellar mass; and make cut
+        idx_nonzero = (self.SFR() > 0) & (self.stellar_mass() > 0)
+        sSFR = self.SFR()[idx_nonzero] / self.stellar_mass()[idx_nonzero]
+        if tracer_name == 'LRG':
+            sSFR_cut = (np.log10(sSFR.value) < sSFR_cutval)
+        elif tracer_name == 'ELG':
+            sSFR_cut = (np.log10(sSFR.value) > sSFR_cutval)
+
+        # sort subhalos by decreasing stellar mass, then take only the first target_N
+        return np.argsort(self.stellar_mass()[idx_nonzero][sSFR_cut])[::-1][:target_N]
+    
+    def LRG_pos(self, survey='DESI', sSFR_cutval=-9.09, n=None, prints=False):
+        return self.subhalo_pos()[self.gal_idx('LRG', survey, sSFR_cutval, n, prints)]

@@ -179,3 +179,6 @@ class TNGSim():
     
     def LRG_pos(self, survey='DESI', sSFR_cutval=-9.09, n=None, prints=False):
         return self.subhalo_pos()[self.gal_idx('LRG', survey, sSFR_cutval, n, prints)]
+    
+    def ELG_pos(self, survey='DESI', sSFR_cutval=-9.09, n=None, prints=False):
+        return self.subhalo_pos()[self.gal_idx('ELG', survey, sSFR_cutval, n, prints)]

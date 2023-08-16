@@ -3,7 +3,7 @@ import Corrfunc
 from Corrfunc.theory import DD, DDrppi
 
 
-def set_up_cf_data(data, randmult, rmin, rmax, nbins, logbins=True, dtype='float32'):
+def set_up_cf_data(data, randmult, rmin, rmax, nbins, boxsize=None, logbins=True, dtype='float32'):
     """Helper function to set up data sets for Corrfunc."""
     if logbins:
         r_edges = np.logspace(np.log10(rmin), np.log10(rmax), nbins+1)
@@ -11,7 +11,7 @@ def set_up_cf_data(data, randmult, rmin, rmax, nbins, logbins=True, dtype='float
         r_edges = np.linspace(rmin, rmax, nbins+1)
     r_avg = 0.5*(r_edges[1:]+r_edges[:-1])
     nd = len(data)
-    boxsize = round(np.amax(data))
+    boxsize = round(np.amax(data)) if boxsize is None else boxsize
     nr = randmult * nd
     rand_set = np.random.uniform(0, boxsize, (nr,3)).astype(dtype)
     data_set = data.astype(dtype)
@@ -94,13 +94,14 @@ def compute_2D_ls_auto(data, randmult, rpmin, rpmax, nrpbins, pimax, logbins=Tru
 
 
 # CROSS-CORRELATIONS #
-def compute_3D_ls_cross(d1, d2, randmult, rmin, rmax, nbins, logbins=True, periodic=True, nthreads=12, rr_fn=None, prints=False):
+def compute_3D_ls_cross(d1, d2, randmult, rmin, rmax, nbins, boxsize=None,
+                        logbins=True, periodic=True, nthreads=12, rr_fn=None, prints=False):
     """Estimate the 3D 2-pt. cross-correlation function."""
 
     # set up data: random set goes with tracers
-    d1forcf = set_up_cf_data(d1, randmult, rmin, rmax, nbins, logbins=logbins, dtype='float32')
+    d1forcf = set_up_cf_data(d1, randmult, rmin, rmax, nbins, boxsize=boxsize, logbins=logbins, dtype='float32')
     r_edges, r_avg, nd1, boxsized1, _, _, d1_set = d1forcf.values()
-    d2forcf = set_up_cf_data(d2, randmult, rmin, rmax, nbins, logbins=logbins, dtype='float32')
+    d2forcf = set_up_cf_data(d2, randmult, rmin, rmax, nbins, boxsize=boxsize, logbins=logbins, dtype='float32')
     r_edges, r_avg, nd2, boxsized2, nr, rand_set, d2_set = d2forcf.values()
     assert boxsized1==boxsized2, "data sets must have the same boxsize!"
 

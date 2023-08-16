@@ -19,7 +19,8 @@ def set_up_cf_data(data, randmult, rmin, rmax, nbins, boxsize=None, logbins=True
 
 
 # AUTO-CORRELATIONS #
-def compute_3D_ls_auto(data, randmult, rmin, rmax, nbins, logbins=True, periodic=True, nthreads=12, rr_fn=None, prints=False):
+def compute_3D_ls_auto(data, randmult, rmin, rmax, nbins, logbins=True, periodic=True, nthreads=12,
+                        nrepeats=1, rr_fn=None, prints=False):
     """Estimate the 3D 2-pt. autocorrelation function."""
 
     # set up data
@@ -32,29 +33,32 @@ def compute_3D_ls_auto(data, randmult, rmin, rmax, nbins, logbins=True, periodic
 
     if prints:
         print("starting computation", flush=True)
-    dd_res = DD(1, nthreads, r_edges, x, y, z, boxsize=boxsize, periodic=periodic, output_ravg=True)
-    if prints:
-        print("DD calculated", flush=True)
-    dr_res = DD(0, nthreads, r_edges, x, y, z, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
-    if prints:
-        print("DR calculated", flush=True)
-    
-    if rr_fn:
-        rr_res = np.load(rr_fn, allow_pickle=True)
-    else:
-        rr_res = DD(1, nthreads, r_edges, x_rand, y_rand, z_rand, boxsize=boxsize, periodic=periodic)
-    if prints:
-        print("RR calculated", flush=True)
+    # repeat the calculation multiple times if desired (helps with noise)
+    xis = np.empty((nrepeats, nbins))
+    for i in range(nrepeats):
+        dd_res = DD(1, nthreads, r_edges, x, y, z, boxsize=boxsize, periodic=periodic, output_ravg=True)
+        if prints:
+            print("DD calculated", flush=True)
+        dr_res = DD(0, nthreads, r_edges, x, y, z, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
+        if prints:
+            print("DR calculated", flush=True)
+        
+        if rr_fn:
+            rr_res = np.load(rr_fn, allow_pickle=True)
+        else:
+            rr_res = DD(1, nthreads, r_edges, x_rand, y_rand, z_rand, boxsize=boxsize, periodic=periodic)
+        if prints:
+            print("RR calculated", flush=True)
 
-    dd = np.array([x['npairs'] for x in dd_res], dtype=float)
-    dr = np.array([x['npairs'] for x in dr_res], dtype=float)
-    rr = np.array([x['npairs'] for x in rr_res], dtype=float)
+        dd = np.array([x['npairs'] for x in dd_res], dtype=float)
+        dr = np.array([x['npairs'] for x in dr_res], dtype=float)
+        rr = np.array([x['npairs'] for x in rr_res], dtype=float)
 
-    results_xi = Corrfunc.utils.convert_3d_counts_to_cf(nd, nd, nr, nr, dd, dr, dr, rr)
-    if prints:
-        print("3d counts converted to cf", flush=True)
+        xis[i] = Corrfunc.utils.convert_3d_counts_to_cf(nd, nd, nr, nr, dd, dr, dr, rr)
+        if prints:
+            print("3d counts converted to cf", flush=True)
 
-    return r_avg, results_xi
+    return r_avg, np.nanmean(xis, axis=0)
 
 
 def compute_2D_ls_auto(data, randmult, rpmin, rpmax, nrpbins, pimax, logbins=True, periodic=True, nthreads=12, rr_fn=None, prints=False):

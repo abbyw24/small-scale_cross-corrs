@@ -11,8 +11,9 @@ from colossus.cosmology import cosmology
 import os
 import sys
 
-from corrfunc_ls import compute_3D_ls_auto
+from corrfunc_ls import compute_3D_ls_auto, compute_3D_ls_cross
 from survey_params_gal import eBOSS_param, DESI_param
+import tools
 
 class TNGSim():
     """
@@ -107,6 +108,12 @@ class TNGSim():
             if prints:
                 print("requested fields already loaded!")
     
+    def idx_nonzero(self):
+        """
+        Boolean array of subhalos (as returned in `_load_subfind_subhalos()`) with nonzero SFR and nonzero stellar mass.
+        """
+        return np.where((self.SFR() > 0) & (self.stellar_mass() > 0))[0]
+    
     def subhalo_pos(self, unit=u.Mpc):
         self._load_subfind_subhalos(fields=['SubhaloPos'])
         return (self.subhalo_info['SubhaloPos'] * u.kpc).to(unit)
@@ -118,6 +125,13 @@ class TNGSim():
     def SFR(self):
         self._load_subfind_subhalos(fields=['SubhaloSFR'])
         return self.subhalo_info['SubhaloSFR'] * u.M_sun / u.year
+    
+    def sSFR(self):
+        """
+        Get specific star formation rates of subhalos (as returned in `_load_subfind_subhalos()`). \
+        Returns zero where stellar mass is zero.
+        """
+        return np.divide(self.SFR(), self.stellar_mass(), out=np.zeros_like(self.SFR()), where=self.stellar_mass()!=0)
     
 
     """ SNAPSHOTS """
@@ -142,7 +156,44 @@ class TNGSim():
         else:
             assert survey_name == 'DESI', "'survey_name' must be 'eBOSS' or 'DESI'"
             return DESI_param(z=self.redshift, tracer_name=tracer_name)
+
+
+    def target_N(self, tracer_name, survey='DESI', n=None, prints=False):
+        """
+        Compute the target number of tracers from TNG boxsize and target number density.
+        Target number density is computed as a function of tracer type ('LRG' or 'ELG') and survey, \
+        using `survey_params()`, or passed as an optional argument.
+        """
+        # target number of galaxies = volume * number density
+        V = self.boxsize**3
+        if n:
+            n = n.to((cu.littleh / u.Mpc)**3) if hasattr(n, 'unit') else n * (cu.littleh / u.Mpc)**3
+            if prints:
+                print(f"input number density: {n.value:.2e} (h/Mpc)^3")
+        else:
+            n = self.survey_params(survey, tracer_name).n_Mpc3 *  (cu.littleh / u.Mpc)**3
+            if prints:
+                print(f"{tracer_name} number density for {survey} at z={self.redshift}: {n.value:.2e} (h/Mpc)^3 ")
+        if prints:
+            print(f"target number of subhalos: {int(V * n)}")
+        return int(V * n)
     
+
+    def idx_sSFR_cut(self, tracer_name, sSFR_cutval):
+        """
+        Return the indices of the subhalos (as returned in `_load_subfind_subhalos()`) that meet the criterion \
+        log10(sSFR) >/< `sSFR_cutval`, with (>/<) dependent on `tracer_name`.
+        """
+        logsSFR = np.ma.log10(self.sSFR().value).filled(False)  # mask any invalid values, then fill mask with False
+        if tracer_name == 'LRG':
+            sSFR_cut = (logsSFR < sSFR_cutval)
+        else:
+            assert tracer_name == 'ELG', "'tracer_name' must be 'LRG' or 'ELG'"
+            sSFR_cut = (logsSFR > sSFR_cutval)
+        assert len(sSFR_cut) == len(self.subhalo_pos())
+        return np.where(sSFR_cut)[0]
+
+
     def gal_idx(self, tracer_name, survey='DESI', sSFR_cutval=-9.09, n=None, prints=False):
         """
         Make cuts in subhalo sSFR and stellar mass to select for LRGs/ELGs and reach a target galaxy number density,
@@ -150,35 +201,40 @@ class TNGSim():
         Option to manually input target number density, otherwise compute as a function of `tracer_name` and `survey` \
         using survey_params().
 
-        S, P & S 2023 uses two different cutoff values for sSFR, log10(sSFR) =
+        Sullivan et al. (2023) uses two different cutoff values for sSFR, log10(sSFR) =
             1. -9.09 (https://arxiv.org/abs/2210.10068 using MilleniumTNG)
             2. -9.23 (https://arxiv.org/abs/2011.05331 using TNG300-1)
         """
-        # target number of galaxies = volume * number density
-        V = self.boxsize**3
-        if n:
-            n = n.to((cu.littleh / u.Mpc)**3) if hasattr(n, 'unit') else n * (cu.littleh / u.Mpc)**3
-            print(f"input number density: {n.value:.2e} (h/Mpc)^3")
-        else:
-            n = self.survey_params(survey, tracer_name).n_Mpc3 *  (cu.littleh / u.Mpc)**3
-            print(f"{tracer_name} number density for {survey} at z={self.redshift}: {n.value:.2e} (h/Mpc)^3 ")
-        target_N = int(V * n)
-        if prints:
-            print(f"target number of subhalos: {target_N}")
-        
-        # specific star formation rate (sSFR) = star formation rate per stellar mass; and make cut
-        idx_nonzero = (self.SFR() > 0) & (self.stellar_mass() > 0)
-        sSFR = self.SFR()[idx_nonzero] / self.stellar_mass()[idx_nonzero]
-        if tracer_name == 'LRG':
-            sSFR_cut = (np.log10(sSFR.value) < sSFR_cutval)
-        elif tracer_name == 'ELG':
-            sSFR_cut = (np.log10(sSFR.value) > sSFR_cutval)
 
-        # sort subhalos by decreasing stellar mass, then take only the first target_N
-        return np.argsort(self.stellar_mass()[idx_nonzero][sSFR_cut])[::-1][:target_N]
-    
-    def LRG_pos(self, survey='DESI', sSFR_cutval=-9.09, n=None, prints=False):
-        return self.subhalo_pos()[self.gal_idx('LRG', survey, sSFR_cutval, n, prints)]
-    
-    def ELG_pos(self, survey='DESI', sSFR_cutval=-9.09, n=None, prints=False):
-        return self.subhalo_pos()[self.gal_idx('ELG', survey, sSFR_cutval, n, prints)]
+        # specific star formation rate (sSFR) = star formation rate per stellar mass
+        sSFR_cut = self.idx_sSFR_cut(tracer_name, sSFR_cutval)  # length == nsubhalos
+
+        # target number of galaxies = volume * number density
+        target_N = self.target_N(tracer_name, survey, n, prints)  # int
+
+        # get the indices of the subhalos that have nonzero SFR, nonzero stellar mass, and meet sSFR criteria
+        idx = np.intersect1d(self.idx_nonzero(), sSFR_cut)  # length < nsubhalos
+        # abundance matching -> sort subhalos that meet the criteria by decreasing stellar mass
+        idx_mass_sorted = idx[np.argsort(self.stellar_mass()[idx])[::-1]]  # length < nsubhalos
+        assert len(idx) == len(idx_mass_sorted)
+        
+        # and only return the first target_N
+        return idx_mass_sorted[:target_N]
+
+
+    """ CORRELATION FUNCTIONS """
+    def galxdm(self, tracer_name, survey='DESI', n=None, dm_nx=100, prints=False,
+                randmult=3, rmin=0.1, rmax=50., nbins=20, nthreads=24, logbins=True, periodic=True):
+
+        # dark matter particle coordinates -> underlying matter field
+        dm_pos = self.dm_pos()
+        if dm_nx:
+            dm_subsample = tools.get_subsample(dm_pos, dm_nx, prints=prints)
+        
+        # galaxy coordinates -> tracers
+        gal_pos = self.subhalo_pos()[self.gal_idx(tracer_name, survey, n=n, prints=prints)]
+
+        # compute cross correlation
+        ravg, xi = compute_3D_ls_cross(gal_pos.value, dm_subsample.value, randmult, rmin, rmax, nbins,
+                                        logbins=logbins, periodic=periodic, nthreads=nthreads, prints=prints)
+        return ravg, xi

@@ -9,22 +9,20 @@ import datetime
 import os
 import sys
 
-from illustris_sim import IllustrisSim
+from illustris_sim import TNGSim
 from corrfunc_ls import compute_3D_ls_auto
 import tools
 
 
 def compute_xi_auto_illustris(sim_name, redshift, data_type, randmult, rmin, rmax, nbins, subsample_nx=None,
-                        logbins=True, periodic=True, nthreads=12, prints=False, save_fn=None, return_res=True):
-    sim = IllustrisSim(sim_name)
-    sim.set_snapshot(redshift=redshift)
-    if data_type=='dm':
-        sim.load_dm_pos()
-        data = sim.dm_pos.value
+                        logbins=True, periodic=True, nthreads=12, prints=False, save_fn=None, return_res=True,
+                        survey='DESI', n=None):
+    sim = TNGSim(sim_name, redshift=redshift)
+    if data_type.upper() == 'DM':
+        data = sim.load_dm_pos().value
     else:
-        assert data_type=='gal', "unknown data_type!"
-        sim.load_galaxies()
-        data = sim.gal_pos.value
+        assert data_type.upper() == 'LRG' or data_type.upper() == 'ELG', "unknown data type (must be DM, LRG, or ELG)"
+        data = sim.subhalo_pos()[sim.gal_idx(data_type.upper(), survey=survey, n=n)].value
 
     if subsample_nx:
         print(f"subsampling 1/{subsample_nx}th of the data", flush=True)

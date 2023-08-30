@@ -12,7 +12,7 @@ import os
 import sys
 
 from corrfunc_ls import compute_3D_ls_auto, compute_3D_ls_cross
-from survey_params_gal import eBOSS_param, DESI_param
+from survey_params_gal import eBOSS_param, DESI_param, SPHEREx_param
 import tools
 
 class TNGSim():
@@ -114,9 +114,13 @@ class TNGSim():
         """
         return np.where((self.SFR() > 0) & (self.stellar_mass() > 0))[0]
     
-    def subhalo_pos(self, unit=u.Mpc):
+    def subhalo_pos(self, unit=u.Mpc/cu.littleh):
         self._load_subfind_subhalos(fields=['SubhaloPos'])
-        return (self.subhalo_info['SubhaloPos'] * u.kpc).to(unit)
+        return (self.subhalo_info['SubhaloPos'] * u.kpc / cu.littleh).to(unit)
+    
+    def subhalo_mass(self):
+        self._load_subfind_subhalos(fields=['SubhaloMass'])
+        return self.subhalo_info['SubhaloMass'] * 1e10 * u.M_sun / cu.littleh # 4th col corresponds to star particles
 
     def stellar_mass(self):
         self._load_subfind_subhalos(fields=['SubhaloMassType'])
@@ -136,29 +140,33 @@ class TNGSim():
 
     """ SNAPSHOTS """
 
-    def dm_pos(self, unit=u.Mpc):
+    def dm_pos(self, unit=u.Mpc/cu.littleh):
         """
         Load the (x,y,z) comoving coordinates of all DM particles.
         If a snapshot or redshift is passed, this overrides any previously set snapshot.
         """
-        dm_pos = il.snapshot.loadSubset(self.basepath, self.snapshot, 'dm', ['Coordinates']) * u.kpc
+        dm_pos = il.snapshot.loadSubset(self.basepath, self.snapshot, 'dm', ['Coordinates']) * u.kpc / cu.littleh
         return dm_pos.to(unit)
     
 
     """ SURVEY EMULATION """
 
-    def survey_params(self, survey_name, tracer_name):
+    def survey_params(self, survey_name, tracer_name, sigma_z=None):
         """
         Calculate the target galaxy number density (function of redshift) for a specific survey, using survey_params_gal.py.
         """
         if survey_name == 'eBOSS':
-            return eBOSS_param(z=self.redshift, tracer_name=tracer_name)
+            params = eBOSS_param(z=self.redshift, tracer_name=tracer_name)
+        elif survey_name == 'DESI':
+            params = DESI_param(z=self.redshift, tracer_name=tracer_name)
+        elif survey_name == 'SPHEREx':
+            params = SPHEREx_param(z=self.redshift, sigma_z=sigma_z)
         else:
-            assert survey_name == 'DESI', "'survey_name' must be 'eBOSS' or 'DESI'"
-            return DESI_param(z=self.redshift, tracer_name=tracer_name)
+            raise ValueError(f"{survey_name} is not a valid survey name")
+        return params
 
 
-    def target_N(self, tracer_name, survey='DESI', n=None, prints=False):
+    def target_N(self, tracer_name, survey='DESI', sigma_z=None, n=None, prints=False):
         """
         Compute the target number of tracers from TNG boxsize and target number density.
         Target number density is computed as a function of tracer type ('LRG' or 'ELG') and survey, \
@@ -171,7 +179,7 @@ class TNGSim():
             if prints:
                 print(f"input number density: {n.value:.2e} (h/Mpc)^3")
         else:
-            n = self.survey_params(survey, tracer_name).n_Mpc3 *  (cu.littleh / u.Mpc)**3
+            n = self.survey_params(survey, tracer_name, sigma_z).n_Mpc3 *  (cu.littleh / u.Mpc)**3
             if prints:
                 print(f"{tracer_name} number density for {survey} at z={self.redshift}: {n.value:.2e} (h/Mpc)^3 ")
         if prints:
@@ -194,7 +202,7 @@ class TNGSim():
         return np.where(sSFR_cut)[0]
 
 
-    def gal_idx(self, tracer_name, survey='DESI', sSFR_cutval=-9.09, n=None, prints=False):
+    def gal_idx(self, tracer_name, survey='DESI', sigma_z=None, sSFR_cutval=-9.09, n=None, prints=False):
         """
         Make cuts in subhalo sSFR and stellar mass to select for LRGs/ELGs and reach a target galaxy number density,
         as outlined in Sullivan, Prijon, & Seljak (2023).
@@ -210,7 +218,7 @@ class TNGSim():
         sSFR_cut = self.idx_sSFR_cut(tracer_name, sSFR_cutval)  # length == nsubhalos
 
         # target number of galaxies = volume * number density
-        target_N = self.target_N(tracer_name, survey, n, prints)  # int
+        target_N = self.target_N(tracer_name, survey, sigma_z, n, prints)  # int
 
         # get the indices of the subhalos that have nonzero SFR, nonzero stellar mass, and meet sSFR criteria
         idx = np.intersect1d(self.idx_nonzero(), sSFR_cut)  # length < nsubhalos

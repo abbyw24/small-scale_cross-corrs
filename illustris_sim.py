@@ -70,7 +70,7 @@ class TNGSim():
     """
 
     def _load_subfind_subhalos(self, fields=['SubhaloPos','SubhaloMassType','SubhaloLenType','SubhaloSFR'],
-                                remove_flagged=True, prints=False):
+                                remove_flagged=True, verbose=False):
         """
         Load the requested fields of this sim's Subfind subhalos (by default removing any flagged as non-cosmological in origin).
         """
@@ -90,12 +90,12 @@ class TNGSim():
             if remove_flagged:
                 subhalo_idx = subhalos['SubhaloFlag']
                 self.nsubhalos = np.sum(subhalo_idx)
-                if prints:
+                if verbose:
                     print(f"removed {np.sum(~subhalo_idx)} flagged subhalos")
             else:
                 self.nsubhalos = len(subhalos['SubhaloFlag'])
                 subhalo_idx = np.full(self.nsubhalos, True)
-            if prints:
+            if verbose:
                 print(f"loaded the following fields for {self.sim_tag} ({self.nsubhalos} subhalos): \n\t", fields_[1:])
             # we need to remove the 'count' entry before we store data as a table, so each column has the same length
             del subhalos['count']
@@ -105,7 +105,7 @@ class TNGSim():
             # append this new info to the table
             self.subhalo_info = table.hstack([subhalo_info, subhalos]) if hasattr(self, 'subhalo_info') else table.Table(subhalos)
         else:
-            if prints:
+            if verbose:
                 print("requested fields already loaded!")
     
     def idx_nonzero(self):
@@ -166,7 +166,7 @@ class TNGSim():
         return params
 
 
-    def target_N(self, tracer_name, survey='DESI', sigma_z=None, n=None, prints=False):
+    def target_N(self, tracer_name, survey='DESI', sigma_z=None, n=None, verbose=False):
         """
         Compute the target number of tracers from TNG boxsize and target number density.
         Target number density is computed as a function of tracer type ('LRG' or 'ELG') and survey, \
@@ -176,13 +176,13 @@ class TNGSim():
         V = self.boxsize**3
         if n:
             n = n.to((cu.littleh / u.Mpc)**3) if hasattr(n, 'unit') else n * (cu.littleh / u.Mpc)**3
-            if prints:
+            if verbose:
                 print(f"input number density: {n.value:.2e} (h/Mpc)^3")
         else:
             n = self.survey_params(survey, tracer_name, sigma_z).n_Mpc3 *  (cu.littleh / u.Mpc)**3
-            if prints:
+            if verbose:
                 print(f"{tracer_name} number density for {survey} at z={self.redshift}: {n.value:.2e} (h/Mpc)^3 ")
-        if prints:
+        if verbose:
             print(f"target number of subhalos: {int(V * n)}")
         return int(V * n)
     
@@ -202,7 +202,7 @@ class TNGSim():
         return np.where(sSFR_cut)[0]
 
 
-    def gal_idx(self, tracer_name, survey='DESI', sigma_z=None, sSFR_cutval=-9.09, n=None, prints=False):
+    def gal_idx(self, tracer_name, survey='DESI', sigma_z=None, sSFR_cutval=-9.09, n=None, verbose=False):
         """
         Make cuts in subhalo sSFR and stellar mass to select for LRGs/ELGs and reach a target galaxy number density,
         as outlined in Sullivan, Prijon, & Seljak (2023).
@@ -218,7 +218,7 @@ class TNGSim():
         sSFR_cut = self.idx_sSFR_cut(tracer_name, sSFR_cutval)  # length == nsubhalos
 
         # target number of galaxies = volume * number density
-        target_N = self.target_N(tracer_name, survey, sigma_z, n, prints)  # int
+        target_N = self.target_N(tracer_name, survey, sigma_z, n, verbose)  # int
 
         # get the indices of the subhalos that have nonzero SFR, nonzero stellar mass, and meet sSFR criteria
         idx = np.intersect1d(self.idx_nonzero(), sSFR_cut)  # length < nsubhalos
@@ -231,18 +231,18 @@ class TNGSim():
 
 
     """ CORRELATION FUNCTIONS """
-    def galxdm(self, tracer_name, survey='DESI', n=None, dm_nx=100, prints=False,
+    def galxdm(self, tracer_name, survey='DESI', n=None, dm_nx=100, verbose=False,
                 randmult=3, rmin=0.1, rmax=50., nbins=20, nthreads=24, logbins=True, periodic=True):
 
         # dark matter particle coordinates -> underlying matter field
         dm_pos = self.dm_pos()
         if dm_nx:
-            dm_subsample = tools.get_subsample(dm_pos, dm_nx, prints=prints)
+            dm_subsample = tools.get_subsample(dm_pos, dm_nx, verbose=verbose)
         
         # galaxy coordinates -> tracers
-        gal_pos = self.subhalo_pos()[self.gal_idx(tracer_name, survey, n=n, prints=prints)]
+        gal_pos = self.subhalo_pos()[self.gal_idx(tracer_name, survey, n=n, verbose=verbose)]
 
         # compute cross correlation
         ravg, xi = compute_3D_ls_cross(gal_pos.value, dm_subsample.value, randmult, rmin, rmax, nbins,
-                                        logbins=logbins, periodic=periodic, nthreads=nthreads, prints=prints)
+                                        logbins=logbins, periodic=periodic, nthreads=nthreads, verbose=verbose)
         return ravg, xi

@@ -215,7 +215,10 @@ class TNGSim():
         """
 
         # specific star formation rate (sSFR) = star formation rate per stellar mass
-        sSFR_cut = self.idx_sSFR_cut(tracer_name, sSFR_cutval)  # length == nsubhalos
+        if survey.upper()=='SPHEREX':
+            sSFR_cut = np.arange(len(self.subhalo_pos()))
+        else:
+            sSFR_cut = self.idx_sSFR_cut(tracer_name, sSFR_cutval)  # length == nsubhalos
 
         # target number of galaxies = volume * number density
         target_N = self.target_N(tracer_name, survey, sigma_z, n, verbose)  # int

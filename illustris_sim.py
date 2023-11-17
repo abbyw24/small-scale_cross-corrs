@@ -11,7 +11,7 @@ from colossus.cosmology import cosmology
 import os
 import sys
 
-from corrfunc_ls import compute_3D_ls_auto, compute_3D_ls_cross
+from corrfuncs import compute_3D_ls_auto, compute_3D_ls_cross
 from survey_params_gal import eBOSS_param, DESI_param, SPHEREx_param
 import tools
 
@@ -30,8 +30,8 @@ class TNGSim():
         self.sim = str(sim)
         self.basepath = os.path.join(scratch, f'small-scale_cross-corrs/{sim}/output')
         if self.sim[:-2] == 'TNG300':
-            self.snapshots = [0, 4, 17, 33, 40, 50, 67, 84, 91, 99]
-            self.redshifts = [20.05, 10., 5., 2., 1.5, 1., 0.5, 0.2, 0.1, 0.]
+            self.snapshots = [0, 4, 17, 33, 40, 50, 59, 67, 72, 78, 84, 91, 99]
+            self.redshifts = [20.05, 10., 5., 2., 1.5, 1., 0.7, 0.5, 0.4, 0.3, 0.2, 0.1, 0.]
             self.boxsize = 205 * (u.Mpc / cu.littleh)
         else:
             assert False, "unknown simulation"

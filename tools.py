@@ -1,5 +1,10 @@
 import numpy as np
 from colossus.cosmology import cosmology
+import astropy.units as u
+import astropy.constants as c
+import astropy.cosmology.units as cu
+from astropy.cosmology import Planck15 as cosmo
+
 
 def get_subsample(data, nx=100, verbose=False):
     """Randomly sample 1/nxth entries of a data set."""
@@ -9,12 +14,46 @@ def get_subsample(data, nx=100, verbose=False):
     idx = np.random.choice(len(data), size=n, replace=False)  # get random indices
     return data[idx]
 
-def linear_2pcf(z, r, cosmo_model='planck15', k=np.logspace(-5.0, 2.0, 500)):
+def linear_2pcf(z, r, cosmo_model='planck15', runit=u.Mpc/cu.littleh): # , k=np.logspace(-5.0, 2.0, 500)):
         """
         Return the 2-pt. matter autocorrelation function at redshift `z` and scales `r` as predicted by linear theory from Colossus.
         """
         cosmo = cosmology.setCosmology(cosmo_model, persistence='r')  # persistence='r' sets this to read-only
         # matter power spectrum
-        Pk = cosmo.matterPowerSpectrum(k)  # defaults to the approximation of Eisenstein & Hu 1998
+        # Pk = cosmo.matterPowerSpectrum(k)  # defaults to the approximation of Eisenstein & Hu 1998
         # 2-pt. matter-matter correlation function is an integral over the power spectrum:
+        r = r.to(runit).value if isinstance(r, u.Quantity) else r
         return cosmo.correlationFunction(r, z=z) 
+
+def perh():
+    return (cosmo.H(0.) / 100 * u.Mpc / u.km * u.s) / cu.littleh
+
+def get_dx(z, sigma_z):
+    return sigma_z * (1 + z) * c.c.to(u.km/u.s) / cosmo.H(z) * perh()
+
+def eval_Gaussian(loc, sigma, mean=0.):
+    pre = 1 / sigma.unit if hasattr(sigma, 'unit') else 1
+    exp = -(loc-mean)**2 / (2 * sigma**2)
+    return pre * np.e**exp
+
+def redshift_to_comov(z, cosmo=cosmo):
+    r = cosmo.comoving_distance(z) * perh() # convert to Mpc/h
+    return r
+
+def theta_to_r_comov(theta, redshift):
+    return (theta * u.deg * cosmo.kpc_comoving_per_arcmin(redshift).to(u.Mpc/u.deg) * perh()).value
+def r_comov_to_theta(r, redshift):
+    return (r / (u.deg * cosmo.kpc_comoving_per_arcmin(redshift).to(u.Mpc/u.deg) * perh())).value
+
+def CartesiantoEquatorial(pos, observer=[0,0,0]):
+    x, y, z = (pos - np.array(observer)).T
+    s = np.hypot(z, y) 
+    lon = np.arctan2(y, z)
+    lat = np.arctan2(x, s)
+
+    # convert to degrees
+    lon = np.rad2deg(lon)
+    lat = np.rad2deg(lat)
+    # wrap lon to [0,360]
+    lon = np.mod(lon-360., 360.)
+    return lon, lat

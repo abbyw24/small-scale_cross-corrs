@@ -10,7 +10,7 @@ import os
 import sys
 
 from illustris_sim import TNGSim
-from corrfunc_ls import compute_3D_ls_auto
+from corrfuncs import compute_3D_ls_auto
 import tools
 
 

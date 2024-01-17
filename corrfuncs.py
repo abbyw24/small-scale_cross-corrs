@@ -1,6 +1,5 @@
 import numpy as np
 import astropy.units as u
-import astropy.cosmology.units as cu
 import Corrfunc
 from Corrfunc.theory import DDrppi
 from Corrfunc.theory.DD import DD
@@ -96,41 +95,61 @@ def compute_3D_ls_auto(data, randmult, rmin, rmax, nbins, boxsize=None, zrange=N
     return r_avg, np.nanmean(xis, axis=0)
 
 
-def compute_2D_ls_auto(data, randmult, rpmin, rpmax, nrpbins, pimax, boxsize=None, zrange=None,
-                        logbins=True, periodic=True, nthreads=12, rr_fn=None, prints=False):
-    """Estimate the projected (2D) 2-pt. autocorrelation function."""
+# def compute_2D_ls_auto(data, randmult, rpmin, rpmax, nrpbins, pimax, boxsize=None, zrange=None,
+#                         logbins=True, periodic=True, nthreads=12, rr_fn=None, prints=False):
+#     """Estimate the projected (2D) 2-pt. autocorrelation function."""
 
-    # set up data
-    dataforcf = set_up_cf_data(data, randmult, rpmin, rpmax, nrpbins, boxsize=boxsize, zrange=None, logbins=logbins)
-    rp_edges, rp_avg, nd, boxsize, nr, rand_set, data_set = dataforcf.values()
+#     # set up data
+#     dataforcf = set_up_cf_data(data, randmult, rpmin, rpmax, nrpbins, boxsize=boxsize, zrange=None, logbins=logbins)
+#     rp_edges, rp_avg, nd, boxsize, nr, rand_set, data_set = dataforcf.values()
 
-    # unpack
-    x, y, z = data_set.T
-    x_rand, y_rand, z_rand = rand_set.T
+#     # unpack
+#     x, y, z = data_set.T
+#     x_rand, y_rand, z_rand = rand_set.T
 
-    dd_res = DDrppi(1, nthreads, pimax, rp_edges, x, y, z, boxsize=boxsize, periodic=periodic)
-    if prints:
-        print("DD calculated")
-    dr_res = DDrppi(0, nthreads, pimax, rp_edges, x, y, z, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
-    if prints:
-        print("DR calculated")
+#     dd_res = DDrppi(1, nthreads, pimax, rp_edges, x, y, z, boxsize=boxsize, periodic=periodic)
+#     if prints:
+#         print("DD calculated")
+#     dr_res = DDrppi(0, nthreads, pimax, rp_edges, x, y, z, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
+#     if prints:
+#         print("DR calculated")
     
-    if rr_fn:
-        rr_res = np.load(rr_fn, allow_pickle=True)
-    else:
-        rr_res = DDrppi(1, nthreads, pimax, rp_edges, x_rand, y_rand, z_rand, boxsize=boxsize, periodic=periodic)
-    if prints:
-        print("RR calculated")
+#     if rr_fn:
+#         rr_res = np.load(rr_fn, allow_pickle=True)
+#     else:
+#         rr_res = DDrppi(1, nthreads, pimax, rp_edges, x_rand, y_rand, z_rand, boxsize=boxsize, periodic=periodic)
+#     if prints:
+#         print("RR calculated")
 
-    dd = np.array([x['npairs'] for x in dd_res], dtype=float)
-    dr = np.array([x['npairs'] for x in dr_res], dtype=float)
-    rr = np.array([x['npairs'] for x in rr_res], dtype=float)
+#     dd = np.array([x['npairs'] for x in dd_res], dtype=float)
+#     dr = np.array([x['npairs'] for x in dr_res], dtype=float)
+#     rr = np.array([x['npairs'] for x in rr_res], dtype=float)
 
-    results_wp = Corrfunc.utils.convert_rp_pi_counts_to_wp(nd, nd, nr, nr, dd, dr, dr, rr, nrpbins, pimax)
-    if prints:
-        print("2d counts converted to cf")
+#     results_wp = Corrfunc.utils.convert_rp_pi_counts_to_wp(nd, nd, nr, nr, dd, dr, dr, rr, nrpbins, pimax)
+#     if prints:
+#         print("2d counts converted to cf")
     
-    return rp_avg, results_wp
+#     return rp_avg, results_wp
+
+
+def wtheta_auto(ra, dec, ra_rand, dec_rand, bins, nthreads=12):
+    nd = len(ra)
+    nr = len(ra_rand)
+    binavg = 0.5 * (bins[1:] + bins[:-1])
+    
+    # D1D2
+    DD_counts = DDtheta_mocks(1, nthreads, bins, ra, dec)
+    # D1R2
+    RR_counts = DDtheta_mocks(1, nthreads, bins, ra_rand, dec_rand)
+    
+    dd = np.array([x['npairs'] for x in DD_counts]) / (nd * (nd-1))
+    rr = np.array([x['npairs'] for x in RR_counts]) / (nr * (nr-1))
+    
+    wtheta = np.empty(len(binavg))
+    wtheta[:] = np.nan
+    wtheta = np.divide(dd, rr, where=(rr!=0.), out=wtheta) - 1
+    
+    return binavg, wtheta
 
 
 # CROSS-CORRELATIONS #
@@ -224,10 +243,21 @@ def compute_2D_ls_cross(d1, d2, randmult, rpmin, rpmax, nbins, pimax, boxsize=No
 
 
 def wtheta_cross_PH(ra1, dec1, ra2, dec2, ra_rand2, dec_rand2, bins, nthreads=12):
+
+    # get compatible units
+    unit = u.deg
+    ra1 = ra1.to(unit).value if isinstance(ra1, u.Quantity) else ra1
+    dec1 = dec1.to(unit).value if isinstance(dec1, u.Quantity) else dec1
+    ra2 = ra2.to(unit).value if isinstance(ra2, u.Quantity) else ra2
+    dec2 = dec2.to(unit).value if isinstance(dec2, u.Quantity) else dec2
+    ra_rand2 = ra_rand2.to(unit).value if isinstance(ra_rand2, u.Quantity) else ra_rand2
+    dec_rand2 = dec_rand2.to(unit).value if isinstance(dec_rand2, u.Quantity) else dec_rand2
+    bins = bins.to(unit).value if isinstance(bins, u.Quantity) else bins
+
     nd1 = len(ra1)
     nd2 = len(ra2)
     nr2 = len(ra_rand2)
-    binavg = 0.5 * (bins[1:] + bins[:-1])
+    binavg = 0.5 * (bins[1:] + bins[:-1]) << unit
     
     # D1D2
     D1D2_counts = DDtheta_mocks(0, nthreads, bins, ra1, dec1, RA2=ra2, DEC2=dec2)
@@ -247,7 +277,7 @@ def wtheta_cross_PH(ra1, dec1, ra2, dec2, ra_rand2, dec_rand2, bins, nthreads=12
 def xi_cross(data1, data2, rand2, bins, boxsize, nthreads=12, periodic=True, dtype='float32'):
 
     # get compatible units
-    unit = u.Mpc / cu.littleh
+    unit = u.Mpc / u.littleh
     data1 = data1.to(unit).value if isinstance(data1, u.Quantity) else data1
     data2 = data2.to(unit).value if isinstance(data2, u.Quantity) else data2
     rand2 = rand2.to(unit).value if isinstance(rand2, u.Quantity) else rand2
@@ -260,9 +290,9 @@ def xi_cross(data1, data2, rand2, bins, boxsize, nthreads=12, periodic=True, dty
     xd2, yd2, zd2 = data2.T.astype(dtype)
     xr, yr, zr = rand2.T.astype(dtype)
 
-    assert 0 < np.all(data1) < boxsize
-    assert 0 < np.all(data2) < boxsize
-    assert 0 < np.all(rand2) < boxsize
+    assert 0 < np.all(data1) < boxsize, "all data1 must be between 0 and boxsize"
+    assert 0 < np.all(data2) < boxsize, "all data2 must be between 0 and boxsize"
+    assert 0 < np.all(rand2) < boxsize, "all rand2 must be between 0 and boxsize"
     
     # compute pair counts
     d1d2_res = DD(0, nthreads, bins, xd1, yd1, zd1, X2=xd2, Y2=yd2, Z2=zd2,
@@ -283,7 +313,7 @@ def xi_cross(data1, data2, rand2, bins, boxsize, nthreads=12, periodic=True, dty
 def xi_auto(data, rand, bins, boxsize, nthreads=12, periodic=True, dtype='float32'):
 
     # get compatible units
-    unit = u.Mpc / cu.littleh
+    unit = u.Mpc / u.littleh
     data = data.to(unit).value if isinstance(data, u.Quantity) else data
     rand = rand.to(unit).value if isinstance(rand, u.Quantity) else rand
     bins = bins.to(unit).value if isinstance(bins, u.Quantity) else bins

@@ -6,7 +6,6 @@ import numpy as np
 import illustris_python as il 
 from astropy import table
 import astropy.units as u
-import astropy.cosmology.units as cu
 from colossus.cosmology import cosmology
 import os
 import sys
@@ -21,18 +20,22 @@ class TNGSim():
     Works with a single snapshot/redshift at a time.
     """
 
-    def __init__(self, sim, snapshot=None, redshift=None, scratch='/scratch/08811/aew492'):
+    def __init__(self, sim, snapshot=None, redshift=None, scratch='/scratch1/08811/aew492'):
 
         # make sure we have passed either a snapshot or a redshift
         assert (snapshot is not None and redshift is None) or (snapshot is None and redshift is not None), \
             "must pass either snapshot or redshift"
         
         self.sim = str(sim)
-        self.basepath = os.path.join(scratch, f'small-scale_cross-corrs/{sim}/output')
+        self.basepath = os.path.join(scratch, f'{sim}/output')
         if self.sim[:-2] == 'TNG300':
-            self.snapshots = [0, 4, 17, 33, 40, 50, 59, 67, 72, 78, 84, 91, 99]
-            self.redshifts = [20.05, 10., 5., 2., 1.5, 1., 0.7, 0.5, 0.4, 0.3, 0.2, 0.1, 0.]
-            self.boxsize = 205 * (u.Mpc / cu.littleh)
+            self.snapshots = [0, 4, 17, 33, 40, 50, 59, 65, 66, # z to 0.5
+                                67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78,  # 0.5 to 0.2
+                                84, 91, 99]  # 0.2 to 0.0
+            self.redshifts = [20.05, 10., 5., 2., 1.5, 1., 0.7, 0.55, 0.52,
+                                0.5, 0.48, 0.46, 0.44, 0.42, 0.4, 0.38, 0.36, 0.35, 0.33, 0.31, 0.3,
+                                0.2, 0.1, 0.]
+            self.boxsize = 205 * (u.Mpc / u.littleh)
         else:
             assert False, "unknown simulation"
         
@@ -114,17 +117,17 @@ class TNGSim():
         """
         return np.where((self.SFR() > 0) & (self.stellar_mass() > 0))[0]
     
-    def subhalo_pos(self, unit=u.Mpc/cu.littleh):
+    def subhalo_pos(self, unit=u.Mpc/u.littleh):
         self._load_subfind_subhalos(fields=['SubhaloPos'])
-        return (self.subhalo_info['SubhaloPos'] * u.kpc / cu.littleh).to(unit)
+        return (self.subhalo_info['SubhaloPos'] * u.kpc / u.littleh).to(unit)
     
     def subhalo_mass(self):
         self._load_subfind_subhalos(fields=['SubhaloMass'])
-        return self.subhalo_info['SubhaloMass'] * 1e10 * u.M_sun / cu.littleh # 4th col corresponds to star particles
+        return self.subhalo_info['SubhaloMass'] * 1e10 * u.M_sun / u.littleh # 4th col corresponds to star particles
 
     def stellar_mass(self):
         self._load_subfind_subhalos(fields=['SubhaloMassType'])
-        return self.subhalo_info['SubhaloMassType'][:,4] * 1e10 * u.M_sun / cu.littleh # 4th col corresponds to star particles
+        return self.subhalo_info['SubhaloMassType'][:,4] * 1e10 * u.M_sun / u.littleh # 4th col corresponds to star particles
     
     def SFR(self):
         self._load_subfind_subhalos(fields=['SubhaloSFR'])
@@ -140,12 +143,12 @@ class TNGSim():
 
     """ SNAPSHOTS """
 
-    def dm_pos(self, unit=u.Mpc/cu.littleh):
+    def dm_pos(self, unit=u.Mpc/u.littleh):
         """
         Load the (x,y,z) comoving coordinates of all DM particles.
         If a snapshot or redshift is passed, this overrides any previously set snapshot.
         """
-        dm_pos = il.snapshot.loadSubset(self.basepath, self.snapshot, 'dm', ['Coordinates']) * u.kpc / cu.littleh
+        dm_pos = il.snapshot.loadSubset(self.basepath, self.snapshot, 'dm', ['Coordinates']) * u.kpc / u.littleh
         return dm_pos.to(unit)
     
 
@@ -175,16 +178,16 @@ class TNGSim():
         # target number of galaxies = volume * number density
         V = self.boxsize**3
         if n:
-            n = n.to((cu.littleh / u.Mpc)**3) if hasattr(n, 'unit') else n * (cu.littleh / u.Mpc)**3
+            self.n = n.to((u.littleh / u.Mpc)**3) if hasattr(n, 'unit') else n * (u.littleh / u.Mpc)**3
             if verbose:
-                print(f"input number density: {n.value:.2e} (h/Mpc)^3")
+                print(f"input number density: {self.n.value:.2e} (h/Mpc)^3")
         else:
-            n = self.survey_params(survey, tracer_name, sigma_z).n_Mpc3 *  (cu.littleh / u.Mpc)**3
+            self.n = self.survey_params(survey, tracer_name, sigma_z).n_Mpc3 *  (u.littleh / u.Mpc)**3
             if verbose:
-                print(f"{tracer_name} number density for {survey} at z={self.redshift}: {n.value:.2e} (h/Mpc)^3 ")
+                print(f"{tracer_name} number density for {survey} at z={self.redshift}: {self.n.value:.2e} (h/Mpc)^3 ")
         if verbose:
-            print(f"target number of subhalos: {int(V * n)}")
-        return int(V * n)
+            print(f"target number of subhalos: {int(V * self.n)}")
+        return int(V * self.n)
     
 
     def idx_sSFR_cut(self, tracer_name, sSFR_cutval):

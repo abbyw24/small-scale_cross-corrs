@@ -17,9 +17,15 @@ import tools
 
 
 def construct_photometric_sample(gal_pos_spec, dx, mean=0.):
+    """
+    Construct a mock photometric galaxy sample with a Gaussian LOS distribution,
+    given input spectroscopic galaxy positions and width of the Gaussian `dx` in comoving units.
+    """
     gal_pos_phot = []
     for i, pos in enumerate(gal_pos_spec):
         draw = tools.eval_Gaussian(pos[2], dx, mean=mean)
+        # normalize to get fraction of the Gaussian's peak
+        draw *= (dx * np.sqrt(2 * np.pi))
         if draw > np.random.uniform():
             gal_pos_phot.append(pos)
         else:
@@ -164,9 +170,35 @@ def wlinx_theory(gal_pos_photometric, gal_pos_spectroscopic, sim, thetaavg, losb
 
 
 def get_linear_bias(gal_pos, sim, nx=500,
-                r_edges=np.logspace(np.log10(1), np.log10(100.), 21), bias_range=(8,-5)):
+                r_edges=np.logspace(np.log10(1), np.log10(100.), 21),
+                bias_range=(8,-5), return_ratio=False):
     """
     Returns the linear bias given a galaxy sample and an input TNG `sim` object.
+
+    Parameters
+    ----------
+    gal_pos : 2darray
+        A (N,3) array of galaxy positions (x,y,z).
+    sim : TNGSim object
+
+    nx : int, optional
+        Subsample parameter for dark matter, to reduce computation time: take every `nx`th particle.
+        The default is 500.
+    r_edges : 1darray, optional
+        The separation bins to use when computing the pair counts.
+    bias_range : len(2) tuple, optional
+        The lower and upper indices to use to compute the bias from the ratio of the 3D c.f.s,
+        gal. x DM to linear theory (DM x DM).
+        The default is (8,-5), based on a few trials with the default `r_edges`.
+    return_ratio : bool, optional
+        Whether to return the `len(r_edges)-1` ratio of xi(gal x DM)) to xi(lin)—if we don't trust
+        the input `bias_range` without looking at this curve by eye.
+
+    Returns
+    -------
+    bias : float
+        The linear galaxy bias: the mean ratio of xi(gal x DM) to xi(lin) over `bias_range`.
+
     """
 
     # bias: Gal x DM / linear theory
@@ -196,7 +228,10 @@ def get_linear_bias(gal_pos, sim, nx=500,
     else:
         bias = np.nanmean(ratio[bias_range[0]:bias_range[1]])
     
-    return bias
+    if return_ratio == True:
+        return bias, ratio
+    else:
+        return bias
 
 
 
@@ -225,25 +260,3 @@ def get_photometric_weights(gal_pos_phot, boxsize, losbins):
     W_phot = 1 / Nphot * dNdchi
     
     return W_phot
-
-
-def powerspec_to_wlin(theta, ell, Cell):
-    """
-    Transform an input matter power spectrum Cell to the real-space linear angular correlation function w(theta).
-    """
-
-    theta = theta.to(u.rad) if isinstance(theta, u.Quantity) else theta << u.rad
-    
-    assert ell.ndim == Cell.ndim == 1, "input ell and Cell must be 1D"
-
-    # function of ell that we want to integrate
-    def integrand(ell_, Cell_):
-        return (ell_ / (2 * np.pi)) * Cell_ * (special.jv(0, ell_ * theta.value))
-
-    # construct our array, and integrate using trapezoid rule
-    ell_func_arr = np.array([
-        integrand(ell[i], Cell[i]) for i in range(len(ell))
-    ])
-    trapz = integrate.trapz(ell_func_arr, x=ell)
-
-    return trapz, ell_func_arr

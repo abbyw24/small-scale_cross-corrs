@@ -31,9 +31,9 @@ def get_dx(z, sigma_z):
     return sigma_z * (1 + z) * c.c.to(u.km/u.s) / cosmo.H(z) * perh()
 
 def eval_Gaussian(loc, sigma, mean=0.):
-    # pre = 1 / sigma.unit if hasattr(sigma, 'unit') else 1
+    pre = 1 / (sigma * np.sqrt(2 * np.pi))
     exp = -(loc-mean)**2 / (2 * sigma**2)
-    return np.e**exp
+    return pre * np.e**exp
 
 def redshift_to_comov(z, cosmo=cosmo):
     r = cosmo.comoving_distance(z) * perh() # convert to Mpc/h

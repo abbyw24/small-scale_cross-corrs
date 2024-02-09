@@ -6,11 +6,12 @@ from Corrfunc.theory.DD import DD
 from Corrfunc.mocks.DDtheta_mocks import DDtheta_mocks
 
 
-def set_up_cf_data(data, randmult, rmin, rmax, nbins, boxsize=None, zrange=None, logbins=True, dtype='float32'):
+def set_up_cf_data(data1, randmult, rmin, rmax, nbins, data2=None, boxsize=None, zrange=None, logbins=True, dtype='float32'):
     """Helper function to set up data sets for Corrfunc."""
+    data_set = data1.copy()
     # remove units
-    if isinstance(data, u.Quantity):
-        data = data.value
+    if isinstance(data_set, u.Quantity):
+        data_set = data_set.value
     if isinstance(boxsize, u.Quantity):
         boxsize = boxsize.value
     if logbins:
@@ -18,38 +19,43 @@ def set_up_cf_data(data, randmult, rmin, rmax, nbins, boxsize=None, zrange=None,
     else:
         r_edges = np.linspace(rmin, rmax, nbins+1)
     r_avg = 0.5*(r_edges[1:]+r_edges[:-1])
-    nd = len(data)
-    if np.amin(data) < 0:
+    nd = len(data_set)
+    if np.amin(data_set) < 0:
         print("shifting data by L/2!")
-        L = 2 * round(np.amax(data)) if boxsize is None else boxsize
-        data += L/2
-    boxsize = round(np.amax(data)) if boxsize is None else boxsize
+        L = 2 * round(np.amax(data_set)) if boxsize is None else boxsize
+        assert np.amax(data_set) <= L/2
+        data_set += L/2
+        if np.any(data_set < 0):
+            data_set -= np.amin(data_set)
+            assert np.all(data_set >= 0)
+    data_set = data_set.astype(dtype)
+    boxsize = round(np.amax(data_set)) if boxsize is None else boxsize
+
+    # if we have a second data set, for cross-correlation
+    if data2 is not None:
+        data2_set = data2.copy()
+        if isinstance(data2_set, u.Quantity):
+            data2_set = data2_set.value
+        nd2 = len(data2_set)
+        if np.amin(data2_set) < 0:
+            print("shifting data2 by L/2!")
+            L = 2 * round(np.amax(data2_set)) if boxsize is None else boxsize
+            assert np.amax(data2_set) <= L/2
+            data2_set += L/2
+            if np.any(data2_set < 0):
+                data2_set -= np.amin(data2_set)
+                assert np.all(data2_set >= 0)
+        data2_set = data2_set.astype(dtype)
+    else:
+        data2_set = None
+        nd2 = None
+
     # construct random set: cubic if zrange is None else incorporate zrange
     nr = randmult * nd
     rand_set = np.random.uniform(0, boxsize, (nr,3)).astype(dtype)
-    # zrange = [round(np.amin(data[:,2])), round(np.amax(data[:,2]))] if zrange is None else zrange
     if zrange is not None:
         rand_set[:,2] = np.random.uniform(zrange[0], zrange[1], nr).astype(dtype)
-    # rand_set = np.array([
-    #     np.random.uniform(0, boxsize, nr),
-    #     np.random.uniform(0, boxsize, nr),
-    #     np.random.uniform(zrange[0], zrange[1], nr)
-    # ]).T.astype(dtype)
-    data_set = data.astype(dtype)
-    # # !!
-    # print(f"zrange = {zrange}")
-    # print("data:")
-    # x, y, z = data_set.T
-    # print(f"x range: {min(x):.1f} - {max(x):.1f}")
-    # print(f"y range: {min(y):.1f} - {max(y):.1f}")
-    # print(f"z range: {min(z):.1f} - {max(z):.1f}")
-    # print("random:")
-    # x, y, z = rand_set.T
-    # print(f"x range: {min(x):.1f} - {max(x):.1f}")
-    # print(f"y range: {min(y):.1f} - {max(y):.1f}")
-    # print(f"z range: {min(z):.1f} - {max(z):.1f}")
-    # # !!
-    return dict(r_edges=r_edges, r_avg=r_avg, nd=nd, boxsize=boxsize, nr=nr, rand_set=rand_set, data_set=data_set)
+    return dict(r_edges=r_edges, r_avg=r_avg, nd=nd, nd2=nd2, boxsize=boxsize, nr=nr, rand_set=rand_set, data_set=data_set, data2_set=data2_set)
 
 
 # AUTO-CORRELATIONS #

@@ -29,13 +29,14 @@ class TNGSim():
         self.sim = str(sim)
         self.basepath = os.path.join(scratch, f'{sim}/output')
         if self.sim[:-2] == 'TNG300':
-            self.snapshots = [0, 4, 17, 33, 40, 50, 59, 65, 66, # z to 0.5
-                                67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78,  # 0.5 to 0.2
+            self.snapshots = [0, 4, 17, 25, 33, 40, 50, 59, 63, 64, 65, 66, # z to 0.5
+                                67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82,  # 0.5 to 0.2
                                 84, 91, 99]  # 0.2 to 0.0
-            self.redshifts = [20.05, 10., 5., 2., 1.5, 1., 0.7, 0.55, 0.52,
-                                0.5, 0.48, 0.46, 0.44, 0.42, 0.4, 0.38, 0.36, 0.35, 0.33, 0.31, 0.3,
+            self.redshifts = [20.05, 10., 5., 3.01, 2., 1.5, 1., 0.7, 0.6, 0.58, 0.55, 0.52,
+                                0.5, 0.48, 0.46, 0.44, 0.42, 0.4, 0.38, 0.36, 0.35, 0.33, 0.31, 0.3, 0.27, 0.26, 0.24, 0.23,
                                 0.2, 0.1, 0.]
             self.boxsize = 205 * (u.Mpc / u.littleh)
+            assert len(self.snapshots) == len(self.redshifts)
         else:
             assert False, "unknown simulation"
         
@@ -146,7 +147,6 @@ class TNGSim():
     def dm_pos(self, unit=u.Mpc/u.littleh):
         """
         Load the (x,y,z) comoving coordinates of all DM particles.
-        If a snapshot or redshift is passed, this overrides any previously set snapshot.
         """
         dm_pos = il.snapshot.loadSubset(self.basepath, self.snapshot, 'dm', ['Coordinates']) * u.kpc / u.littleh
         return dm_pos.to(unit)

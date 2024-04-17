@@ -6,7 +6,8 @@ from Corrfunc.theory.DD import DD
 from Corrfunc.mocks.DDtheta_mocks import DDtheta_mocks
 
 
-def set_up_cf_data(data1, randmult, rmin, rmax, nbins, data2=None, boxsize=None, zrange=None, logbins=True, dtype='float32'):
+def set_up_cf_data(data1, randmult, rmin, rmax, nbins, data2=None,
+                    boxsize=None, zrange=None, logbins=True, dtype='float32', verbose=False):
     """Helper function to set up data sets for Corrfunc."""
     data_set = data1.copy()
     # remove units
@@ -21,7 +22,8 @@ def set_up_cf_data(data1, randmult, rmin, rmax, nbins, data2=None, boxsize=None,
     r_avg = 0.5*(r_edges[1:]+r_edges[:-1])
     nd = len(data_set)
     if np.amin(data_set) < 0:
-        print("shifting data by L/2!")
+        if verbose:
+            print("shifting data by L/2!")
         L = 2 * round(np.amax(data_set)) if boxsize is None else boxsize
         assert np.amax(data_set) <= L/2
         data_set += L/2
@@ -38,9 +40,11 @@ def set_up_cf_data(data1, randmult, rmin, rmax, nbins, data2=None, boxsize=None,
             data2_set = data2_set.value
         nd2 = len(data2_set)
         if np.amin(data2_set) < 0:
-            print("shifting data2 by L/2!")
+            if verbose:
+                print("shifting data2 by L/2!")
             L = 2 * round(np.amax(data2_set)) if boxsize is None else boxsize
-            assert np.amax(data2_set) <= L/2
+            assert np.amax(data2_set) <= L/2, \
+                f"data2_set out of bounds! max = {np.amax(data2_set):.1f}, L/2 = {L/2:.1f}"
             data2_set += L/2
             if np.any(data2_set < 0):
                 data2_set -= np.amin(data2_set)

@@ -12,16 +12,20 @@ import os
 import sys
 
 from illustris_sim import TNGSim
+from linear_theory import get_linear_bias, powerspec_to_wlin
 import corrfuncs
 import tools
 
 
-def construct_photometric_sample(gal_pos_spec, dx, mean=0.):
+def construct_photometric_sample(gal_pos_spec, dx, mean=None):
     """
     Construct a mock photometric galaxy sample with a Gaussian LOS distribution,
     given input spectroscopic galaxy positions and width of the Gaussian `dx` in comoving units.
+    If `mean == None`, takes the mean position of `gal_pos_spec` along the LOS (assumed z component).
     """
     gal_pos_phot = []
+    if mean is None:
+        mean = np.nanmean(gal_pos_spec[:,2])
     for i, pos in enumerate(gal_pos_spec):
         draw = tools.eval_Gaussian(pos[2], dx, mean=mean)
         # normalize to get fraction of the Gaussian's peak
@@ -33,7 +37,7 @@ def construct_photometric_sample(gal_pos_spec, dx, mean=0.):
     return np.array(gal_pos_phot) << dx.unit
 
 
-def compute_photxspec(gal_pos_spec, redshift, sigma_z, boxsize, losbins, theta_edges):
+def compute_wtheta_photxspec(gal_pos_spec, redshift, sigma_z, boxsize, losbins, theta_edges):
     
     # prep inputs
     gal_pos_spec = gal_pos_spec.to(u.Mpc/u.littleh) if isinstance(gal_pos_spec, u.Quantity) \
@@ -150,7 +154,7 @@ def Cellx_theory(gal_pos_photometric, gal_pos_spectroscopic, sim, thetaavg, losb
     return C_ells
 
 
-def wlinx_theory(gal_pos_photometric, gal_pos_spectroscopic, sim, thetaavg, losbins, ell=np.logspace(0, 6, 1000), nx=500,
+def wlin_photxspec_theory(gal_pos_photometric, gal_pos_spectroscopic, sim, thetaavg, losbins, ell=np.logspace(0, 6, 1000), nx=500,
                 r_edges=np.logspace(np.log10(1), np.log10(100.), 21), b_spec=None, bias_range=(8,-5)):
     """
     Wrapper for Cellx_theory() that returns the real-space correlation function.
@@ -167,72 +171,6 @@ def wlinx_theory(gal_pos_photometric, gal_pos_spectroscopic, sim, thetaavg, losb
             powerspec_to_wlin(theta_, ell, Cell)[0] for theta_ in thetaavg
         ])
     return wlin_pred, C_ells
-
-
-def get_linear_bias(gal_pos, sim, nx=500,
-                r_edges=np.logspace(np.log10(1), np.log10(100.), 21),
-                bias_range=(8,-5), return_ratio=False):
-    """
-    Returns the linear bias given a galaxy sample and an input TNG `sim` object.
-
-    Parameters
-    ----------
-    gal_pos : 2darray
-        A (N,3) array of galaxy positions (x,y,z).
-    sim : TNGSim object
-
-    nx : int, optional
-        Subsample parameter for dark matter, to reduce computation time: take every `nx`th particle.
-        The default is 500.
-    r_edges : 1darray, optional
-        The separation bins to use when computing the pair counts.
-    bias_range : len(2) tuple, optional
-        The lower and upper indices to use to compute the bias from the ratio of the 3D c.f.s,
-        gal. x DM to linear theory (DM x DM).
-        The default is (8,-5), based on a few trials with the default `r_edges`.
-    return_ratio : bool, optional
-        Whether to return the `len(r_edges)-1` ratio of xi(gal x DM)) to xi(lin)—if we don't trust
-        the input `bias_range` without looking at this curve by eye.
-
-    Returns
-    -------
-    bias : float
-        The linear galaxy bias: the mean ratio of xi(gal x DM) to xi(lin) over `bias_range`.
-
-    """
-
-    # bias: Gal x DM / linear theory
-    dm_pos = tools.get_subsample(sim.dm_pos(), nx=nx).value  # underlying dark matter
-    L = sim.boxsize.value
-    # corresponding random set
-    rand_pos = np.random.uniform(0, L, (len(dm_pos),3))
-
-    # format galaxy sample
-    gal_pos = gal_pos.value if isinstance(gal_pos, u.Quantity) else gal_pos
-    if np.amin(gal_pos) < 0:
-        gal_pos += L/2
-    for i, x in enumerate([dm_pos, rand_pos, gal_pos]):
-        assert 0 < np.all(x) < L 
-    
-    # Gal x DM cross correlation
-    ravg, xix_spec = corrfuncs.xi_cross(gal_pos, dm_pos, rand_pos, r_edges, boxsize=L, dtype=float)
-
-    # linear theory from Colossus
-    xi_lin = tools.linear_2pcf(sim.redshift, ravg)
-
-    # ratio
-    ratio = xix_spec / xi_lin
-
-    if bias_range is None:
-        bias = np.nanmean(ratio)
-    else:
-        bias = np.nanmean(ratio[bias_range[0]:bias_range[1]])
-    
-    if return_ratio == True:
-        return bias, ratio
-    else:
-        return bias
-
 
 
 def get_photometric_weights(gal_pos_phot, boxsize, losbins):

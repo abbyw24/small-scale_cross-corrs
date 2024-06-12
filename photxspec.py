@@ -37,7 +37,7 @@ def construct_photometric_sample(gal_pos_spec, dx, mean=None):
     return np.array(gal_pos_phot) << dx.unit
 
 
-def compute_wtheta_photxspec(gal_pos_spec, redshift, sigma_z, boxsize, losbins, theta_edges):
+def compute_wtheta_photxspec_single_snapshot(gal_pos_spec, redshift, sigma_z, boxsize, losbins, theta_edges):
     
     # prep inputs
     gal_pos_spec = gal_pos_spec.to(u.Mpc/u.littleh) if isinstance(gal_pos_spec, u.Quantity) \
@@ -111,6 +111,40 @@ def compute_wtheta_photxspec(gal_pos_spec, redshift, sigma_z, boxsize, losbins, 
         'gal_pos_phots' : gal_pos_phots
     }
     return res
+
+
+def construct_spherex_galaxy_samples(snapshots, sigma_z, ns=None, verbose=True):
+
+    # check inputs
+    if ns is not None:
+        assert len(ns) == len(snapshots), "number of input target number densities must match number of snapshots"
+
+    # load the snapshots and construct the spectroscopic galaxy samples
+    redshifts = np.empty(len(snapshots)) # redshift of each snapshot
+    chis = np.empty(len(snapshots)) # comoving distance to the center of each snapshot
+    gal_pos_specs = [] # where to store galaxy positions
+    for i, snapshot in enumerate(snapshots):
+        sim = TNGSim('TNG300-3', snapshot=snapshot)
+        chi = tools.redshift_to_comov(sim.redshift)
+        redshifts[i] = sim.redshift
+        chis[i] = chi.value
+        n = ns[i] if ns is not None else None
+        
+        gal_pos_spec = sim.subhalo_pos()[sim.gal_idx('','SPHEREx', sigma_z=sigma_z, n=n, verbose=verbose)]
+        gal_pos_spec = tools.remove_values(gal_pos_spec, minimum=0, maximum=sim.boxsize)
+        gal_pos_spec -= sim.boxsize / 2  # center at zero
+        assert np.all(gal_pos_spec >= -sim.boxsize / 2) and np.all(gal_pos_spec <= sim.boxsize / 2), \
+            f"galaxy positions out of bounds! min = {np.nanmin(gal_pos_spec):.3f}, max = {np.nanmax(gal_pos_spec):.3f}"
+        gal_pos_specs.append(gal_pos_spec)
+    chis *= chi.unit  # give unit back to the chis
+    if verbose:
+        print(f"mean redshift of these {len(snapshots)} snapshots is {np.mean(redshifts):.2f}")
+    
+    res = dict(redshifts=redshifts, chis=chis, gal_pos_specs=gal_pos_specs, boxsize=sim.boxsize)
+    return res
+
+
+
 
 
 def Cellx_theory(gal_pos_photometric, gal_pos_spectroscopic, sim, thetaavg, losbins, ell=np.logspace(0, 6, 1000), nx=500,

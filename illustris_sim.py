@@ -10,7 +10,7 @@ from colossus.cosmology import cosmology
 import os
 import sys
 
-from corrfuncs import compute_3D_ls_auto, compute_3D_ls_cross
+from corrfuncs import compute_xi_cross
 from survey_params_gal import eBOSS_param, DESI_param, SPHEREx_param
 import tools
 
@@ -29,12 +29,18 @@ class TNGSim():
         self.sim = str(sim)
         self.basepath = os.path.join(scratch, f'{sim}/output')
         if self.sim[:-2] == 'TNG300':
-            self.snapshots = [0, 4, 17, 25, 33, 40, 50, 59, 63, 64, 65, 66, # z to 0.5
-                                67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82,  # 0.5 to 0.2
-                                84, 91, 99]  # 0.2 to 0.0
-            self.redshifts = [20.05, 10., 5., 3.01, 2., 1.5, 1., 0.7, 0.6, 0.58, 0.55, 0.52,
-                                0.5, 0.48, 0.46, 0.44, 0.42, 0.4, 0.38, 0.36, 0.35, 0.33, 0.31, 0.3, 0.27, 0.26, 0.24, 0.23,
-                                0.2, 0.1, 0.]
+            self.snapshots = [0, 4, 17, 25, 33, # z to 1.5
+                                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, # 1.5 to 1.0
+                                50, 51, 52, 53, 54, 55, 56, 57, # 1.0 to 0.75
+                                58, 59, 63, 64, 65, 66, # 0.75 to 0.5
+                                67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, # 0.5 to 0.25
+                                81, 82, 84, 91, 99]  # 0.25 to 0.0
+            self.redshifts = [20.05, 10., 5., 3.01, 2.,
+                                1.5, 1.41, 1.36, 1.30, 1.25, 1.21, 1.15, 1.11, 1.07, 1.04,
+                                1., 0.95, 0.92, 0.89, 0.85, 0.82, 0.79, 0.76,
+                                0.73, 0.7, 0.6, 0.58, 0.55, 0.52,
+                                0.5, 0.48, 0.46, 0.44, 0.42, 0.4, 0.38, 0.36, 0.35, 0.33, 0.31, 0.3, 0.27, 0.26,
+                                0.24, 0.23, 0.2, 0.1, 0.]
             self.boxsize = 205 * (u.Mpc / u.littleh)
             assert len(self.snapshots) == len(self.redshifts)
         else:
@@ -144,11 +150,13 @@ class TNGSim():
 
     """ SNAPSHOTS """
 
-    def dm_pos(self, unit=u.Mpc/u.littleh):
+    def dm_pos(self, unit=u.Mpc/u.littleh, verbose=True):
         """
         Load the (x,y,z) comoving coordinates of all DM particles.
         """
         dm_pos = il.snapshot.loadSubset(self.basepath, self.snapshot, 'dm', ['Coordinates']) * u.kpc / u.littleh
+        if verbose:
+            print(f"loaded {len(dm_pos)} dark matter particles")
         return dm_pos.to(unit)
     
 
@@ -182,9 +190,9 @@ class TNGSim():
             if verbose:
                 print(f"input number density: {self.n.value:.2e} (h/Mpc)^3")
         else:
-            self.n = self.survey_params(survey, tracer_name, sigma_z).n_Mpc3 *  (u.littleh / u.Mpc)**3
+            self.n = self.survey_params(survey, tracer_name, sigma_z).n_Mpc3 * (u.littleh / u.Mpc)**3
             if verbose:
-                print(f"{tracer_name} number density for {survey} at z={self.redshift}: {self.n.value:.2e} (h/Mpc)^3 ")
+                print(f"{tracer_name} number density for {survey} at z={self.redshift}: {self.n.value:.2e} (h/Mpc)^3")
         if verbose:
             print(f"target number of subhalos: {int(V * self.n)}")
         return int(V * self.n)
@@ -249,6 +257,6 @@ class TNGSim():
         gal_pos = self.subhalo_pos()[self.gal_idx(tracer_name, survey, n=n, verbose=verbose)]
 
         # compute cross correlation
-        ravg, xi = compute_3D_ls_cross(gal_pos.value, dm_subsample.value, randmult, rmin, rmax, nbins,
+        ravg, xi = compute_xi_cross(gal_pos.value, dm_subsample.value, randmult, rmin, rmax, nbins,
                                         logbins=logbins, periodic=periodic, nthreads=nthreads, verbose=verbose)
         return ravg, xi

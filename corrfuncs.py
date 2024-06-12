@@ -63,93 +63,67 @@ def set_up_cf_data(data1, randmult, rmin, rmax, nbins, data2=None,
 
 
 # AUTO-CORRELATIONS #
-def compute_3D_ls_auto(data, randmult, rmin, rmax, nbins, boxsize=None, zrange=None, logbins=True, periodic=True, nthreads=12,
-                        nrepeats=1, rr_fn=None, prints=False):
-    """Estimate the 3D 2-pt. autocorrelation function."""
-
-    # set up data
-    dataforcf = set_up_cf_data(data, randmult, rmin, rmax, nbins, boxsize=boxsize, zrange=zrange, logbins=logbins, dtype='float32')
-    r_edges, r_avg, nd, boxsize, nr, rand_set, data_set = dataforcf.values()
+def compute_xi_auto(data, rmin, rmax, nbins, randmult=3,
+                    boxsize=None, logbins=True, nrepeats=1, nthreads=12, periodic=False):
+    # prep data
+    data_for_cf = set_up_cf_data(data, randmult=randmult, rmin=rmin, rmax=rmax, nbins=nbins,
+                                      boxsize=boxsize, logbins=logbins)
+    r_edges, r_avg, nd, _, boxsize, nr, rand_set, data_set, _ = data_for_cf.values()
 
     # unpack
-    x, y, z = data_set.T
-    x_rand, y_rand, z_rand = rand_set.T
+    xd, yd, zd = data_set.T
+    xr, yr, zr = rand_set.T
 
-    if prints:
-        print("starting computation", flush=True)
-    # repeat the calculation multiple times if desired (helps with noise)
-    xis = np.empty((nrepeats, nbins))
-    for i in range(nrepeats):
-        dd_res = DD(1, nthreads, r_edges, x, y, z, boxsize=boxsize, periodic=periodic, output_ravg=True)
-        if prints:
-            print("DD calculated", flush=True)
-        dr_res = DD(0, nthreads, r_edges, x, y, z, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
-        if prints:
-            print("DR calculated", flush=True)
-        
-        if rr_fn:
-            rr_res = np.load(rr_fn, allow_pickle=True)
-        else:
-            rr_res = DD(1, nthreads, r_edges, x_rand, y_rand, z_rand, boxsize=boxsize, periodic=periodic)
-        if prints:
-            print("RR calculated", flush=True)
+    xis = np.full((nrepeats,nbins), np.nan)
+    for j in range(nrepeats):
 
-        dd = np.array([x['npairs'] for x in dd_res], dtype=float)
-        dr = np.array([x['npairs'] for x in dr_res], dtype=float)
-        rr = np.array([x['npairs'] for x in rr_res], dtype=float)
+        dd_res = DD(1, nthreads, r_edges, xd, yd, zd, boxsize=boxsize, periodic=periodic, output_ravg=True)
+        dr_res = DD(0, nthreads, r_edges, xd, yd, zd, X2=xr, Y2=yr, Z2=zr, boxsize=boxsize, periodic=periodic)
+        rr_res = DD(1, nthreads, r_edges, xr, yr, zr, boxsize=boxsize, periodic=periodic)
 
-        xis[i] = Corrfunc.utils.convert_3d_counts_to_cf(nd, nd, nr, nr, dd, dr, dr, rr)
-        if prints:
-            print("3d counts converted to cf", flush=True)
+        # turn pair counts into actual correlation function: Landy-Szalay estimator
+        xis[j] = Corrfunc.utils.convert_3d_counts_to_cf(nd, nd, nr, nr, dd_res, dr_res, dr_res, rr_res)
 
-    return r_avg, np.nanmean(xis, axis=0)
+    xi = np.nanmean(xis, axis=0)  # get the mean across the runs
+
+    return r_avg, xi
 
 
-# def compute_2D_ls_auto(data, randmult, rpmin, rpmax, nrpbins, pimax, boxsize=None, zrange=None,
-#                         logbins=True, periodic=True, nthreads=12, rr_fn=None, prints=False):
-#     """Estimate the projected (2D) 2-pt. autocorrelation function."""
+def compute_wp_auto(data, randmult, rpmin, rpmax, nrpbins, pimax,
+                    boxsize=None, logbins=True, nrepeats=1, nthreads=12, periodic=False):
+    # prep data
+    data_for_cf = set_up_cf_data(data, randmult=randmult, rmin=rpmin, rmax=rpmax, nbins=nrpbins,
+                                            boxsize=boxsize, logbins=logbins)
+    rp_edges, rp_avg, nd, _, boxsize, nr, rand_set, data_set, _ = data_for_cf.values()
+    assert np.all(rand_set >= 0) and np.all(rand_set <= boxsize)
+    assert np.all(data_set >= 0) and np.all(data_set <= boxsize)
 
-#     # set up data
-#     dataforcf = set_up_cf_data(data, randmult, rpmin, rpmax, nrpbins, boxsize=boxsize, zrange=None, logbins=logbins)
-#     rp_edges, rp_avg, nd, boxsize, nr, rand_set, data_set = dataforcf.values()
+    # unpack
+    xd, yd, zd = data_set.T
+    xr, yr, zr = rand_set.T
 
-#     # unpack
-#     x, y, z = data_set.T
-#     x_rand, y_rand, z_rand = rand_set.T
+    wps = np.full((nrepeats,nrpbins), np.nan)
+    for j in range(nrepeats):
 
-#     dd_res = DDrppi(1, nthreads, pimax, rp_edges, x, y, z, boxsize=boxsize, periodic=periodic)
-#     if prints:
-#         print("DD calculated")
-#     dr_res = DDrppi(0, nthreads, pimax, rp_edges, x, y, z, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
-#     if prints:
-#         print("DR calculated")
-    
-#     if rr_fn:
-#         rr_res = np.load(rr_fn, allow_pickle=True)
-#     else:
-#         rr_res = DDrppi(1, nthreads, pimax, rp_edges, x_rand, y_rand, z_rand, boxsize=boxsize, periodic=periodic)
-#     if prints:
-#         print("RR calculated")
+        dd_res = DDrppi(1, nthreads, pimax, rp_edges, xd, yd, zd, boxsize=boxsize, periodic=periodic, output_rpavg=True)
+        dr_res = DDrppi(0, nthreads, pimax, rp_edges, xd, yd, zd, X2=xr, Y2=yr, Z2=zr, boxsize=boxsize, periodic=periodic)
+        rr_res = DDrppi(1, nthreads, pimax, rp_edges, xr, yr, zr, boxsize=boxsize, periodic=periodic)
 
-#     dd = np.array([x['npairs'] for x in dd_res], dtype=float)
-#     dr = np.array([x['npairs'] for x in dr_res], dtype=float)
-#     rr = np.array([x['npairs'] for x in rr_res], dtype=float)
+        # turn pair counts into actual correlation function: Landy-Szalay estimator
+        wps[j] = Corrfunc.utils.convert_rp_pi_counts_to_wp(nd, nd, nr, nr, dd_res, dr_res, dr_res, rr_res, nrpbins, pimax)
 
-#     results_wp = Corrfunc.utils.convert_rp_pi_counts_to_wp(nd, nd, nr, nr, dd, dr, dr, rr, nrpbins, pimax)
-#     if prints:
-#         print("2d counts converted to cf")
-    
-#     return rp_avg, results_wp
+    wp = np.nanmean(wps, axis=0)  # get the mean across the runs
+
+    return rp_avg, wp
 
 
-def wtheta_auto(ra, dec, ra_rand, dec_rand, bins, nthreads=12):
+def compute_wtheta_auto(ra, dec, ra_rand, dec_rand, bins, nthreads=12):
     nd = len(ra)
     nr = len(ra_rand)
     binavg = 0.5 * (bins[1:] + bins[:-1])
     
-    # D1D2
+    # compute pair counts
     DD_counts = DDtheta_mocks(1, nthreads, bins, ra, dec)
-    # D1R2
     RR_counts = DDtheta_mocks(1, nthreads, bins, ra_rand, dec_rand)
     
     dd = np.array([x['npairs'] for x in DD_counts]) / (nd * (nd-1))
@@ -163,51 +137,49 @@ def wtheta_auto(ra, dec, ra_rand, dec_rand, bins, nthreads=12):
 
 
 # CROSS-CORRELATIONS #
-def compute_3D_ls_cross(d1, d2, randmult, rmin, rmax, nbins, boxsize=None, zrange=None,
+def compute_xi_cross(d1, d2, randmult, rmin, rmax, nbins, boxsize=None, zrange=None,
                         logbins=True, periodic=True, nthreads=12, rr_fn=None, prints=False):
     """Estimate the 3D 2-pt. cross-correlation function."""
 
     # set up data: random set goes with tracers
-    d1forcf = set_up_cf_data(d1, randmult, rmin, rmax, nbins, boxsize=boxsize, zrange=zrange, logbins=logbins, dtype='float32')
-    r_edges, r_avg, nd1, boxsized1, _, _, d1_set = d1forcf.values()
-    d2forcf = set_up_cf_data(d2, randmult, rmin, rmax, nbins, boxsize=boxsize, zrange=zrange, logbins=logbins, dtype='float32')
-    r_edges, r_avg, nd2, boxsized2, nr, rand_set, d2_set = d2forcf.values()
-    assert boxsized1==boxsized2, "data sets must have the same boxsize!"
+    dataforcf = set_up_cf_data(d1, randmult, rmin, rmax, nbins, data2=d2, boxsize=boxsize,
+                                zrange=zrange, logbins=logbins, dtype='float32')
+    r_edges, r_avg, nd1, nd2, boxsize, nr, rand_set, d1_set, d2_set = dataforcf.values()
 
     # unpack
     xd1, yd1, zd1 = d1_set.T
     xd2, yd2, zd2 = d2_set.T
     x_rand, y_rand, z_rand = rand_set.T
 
-    d1d2_res = DD(0, nthreads, r_edges, xd1, yd1, zd1, X2=xd2, Y2=yd2, Z2=zd2, boxsize=boxsized1, periodic=periodic, output_ravg=True)
+    d1d2_res = DD(0, nthreads, r_edges, xd1, yd1, zd1, X2=xd2, Y2=yd2, Z2=zd2, boxsize=boxsize, periodic=periodic, output_ravg=True)
     if prints:
         print("D1D2 calculated")
-    d1r_res = DD(0, nthreads, r_edges, xd1, yd1, zd1, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsized1, periodic=periodic)
+    d1r_res = DD(0, nthreads, r_edges, xd1, yd1, zd1, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
     if prints:
         print("D1R calculated")
-    d2r_res = DD(0, nthreads, r_edges, xd2, yd2, zd2, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsized1, periodic=periodic)
+    d2r_res = DD(0, nthreads, r_edges, xd2, yd2, zd2, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
     if prints:
         print("D2R calculated")
     
     if rr_fn:
         rr_res = np.load(rr_fn, allow_pickle=True)
     else:
-        rr_res = DD(1, nthreads, r_edges, x_rand, y_rand, z_rand, boxsize=boxsized1, periodic=periodic)
+        rr_res = DD(1, nthreads, r_edges, x_rand, y_rand, z_rand, boxsize=boxsize, periodic=periodic)
     if prints:
         print("RR calculated")
 
-    d1d2 = np.array([x['npairs'] for x in d1d2_res], dtype=float)
-    d1r = np.array([x['npairs'] for x in d1r_res], dtype=float)
-    d2r = np.array([x['npairs'] for x in d2r_res], dtype=float)
-    rr = np.array([x['npairs'] for x in rr_res], dtype=float)
+    # d1d2 = np.array([x['npairs'] for x in d1d2_res], dtype=float)
+    # d1r = np.array([x['npairs'] for x in d1r_res], dtype=float)
+    # d2r = np.array([x['npairs'] for x in d2r_res], dtype=float)
+    # rr = np.array([x['npairs'] for x in rr_res], dtype=float)
 
-    results_xi = Corrfunc.utils.convert_3d_counts_to_cf(nd1, nd2, nr, nr, d1d2, d1r, d2r, rr)
+    results_xi = Corrfunc.utils.convert_3d_counts_to_cf(nd1, nd2, nr, nr, d1d2_res, d1r_res, d2r_res, rr_res)
     if prints:
         print("3d counts converted to cf")
 
     return r_avg, results_xi
 
-def compute_2D_ls_cross(d1, d2, randmult, rpmin, rpmax, nbins, pimax, boxsize=None, zrange=None,
+def compute_wp_cross(d1, d2, randmult, rpmin, rpmax, nbins, pimax, boxsize=None, zrange=None,
                         logbins=True, periodic=True, nthreads=12, rr_fn=None, prints=False):
     """Estimate the 2D 2-pt. cross-correlation function."""
 
@@ -282,71 +254,3 @@ def wtheta_cross_PH(ra1, dec1, ra2, dec2, ra_rand2, dec_rand2, bins, nthreads=12
     wtheta = np.divide(d1d2, d1r2, where=(d1r2!=0.), out=wtheta) - 1
     
     return binavg, wtheta
-
-
-def xi_cross(data1, data2, rand2, bins, boxsize, nthreads=12, periodic=True, dtype='float32'):
-
-    # get compatible units
-    unit = u.Mpc / u.littleh
-    data1 = data1.to(unit).value if isinstance(data1, u.Quantity) else data1
-    data2 = data2.to(unit).value if isinstance(data2, u.Quantity) else data2
-    rand2 = rand2.to(unit).value if isinstance(rand2, u.Quantity) else rand2
-    bins = bins.to(unit).value if isinstance(bins, u.Quantity) else bins
-    boxsize = boxsize.to(unit).value if isinstance(boxsize, u.Quantity) else boxsize
-
-    # params
-    binavg = (0.5 * (bins[1:] + bins[:-1])).astype(dtype)
-    xd1, yd1, zd1 = data1.T.astype(dtype)
-    xd2, yd2, zd2 = data2.T.astype(dtype)
-    xr, yr, zr = rand2.T.astype(dtype)
-
-    assert 0 < np.all(data1) < boxsize, "all data1 must be between 0 and boxsize"
-    assert 0 < np.all(data2) < boxsize, "all data2 must be between 0 and boxsize"
-    assert 0 < np.all(rand2) < boxsize, "all rand2 must be between 0 and boxsize"
-    
-    # compute pair counts
-    d1d2_res = DD(0, nthreads, bins, xd1, yd1, zd1, X2=xd2, Y2=yd2, Z2=zd2,
-                      boxsize=boxsize, periodic=periodic, output_ravg=True)
-    d1r2_res = DD(0, nthreads, bins, xd1, yd1, zd1, X2=xr, Y2=yr, Z2=zr,
-                      boxsize=boxsize, periodic=periodic, output_ravg=True)
-    d1d2 = np.array([x['npairs'] for x in d1d2_res], dtype=dtype)
-    d1r2 = np.array([x['npairs'] for x in d1r2_res], dtype=dtype)
-
-    ndpairs = len(data1) * len(data2)
-    nrpairs = len(data1) * len(rand2)
-
-    counts = np.divide(d1d2, d1r2, where=(d1r2!=0.), out=np.zeros_like(d1d2), dtype=dtype)
-
-    return binavg, nrpairs / ndpairs * counts - 1
-
-
-def xi_auto(data, rand, bins, boxsize, nthreads=12, periodic=True, dtype='float32'):
-
-    # get compatible units
-    unit = u.Mpc / u.littleh
-    data = data.to(unit).value if isinstance(data, u.Quantity) else data
-    rand = rand.to(unit).value if isinstance(rand, u.Quantity) else rand
-    bins = bins.to(unit).value if isinstance(bins, u.Quantity) else bins
-    boxsize = boxsize.to(unit).value if isinstance(boxsize, u.Quantity) else boxsize
-
-    # params
-    binavg = (0.5 * (bins[1:] + bins[:-1])).astype(dtype)
-    xd, yd, zd = data.T.astype(dtype)
-    xr, yr, zr = rand.T.astype(dtype)
-
-    assert 0 < np.all(data) < boxsize
-    assert 0 < np.all(rand) < boxsize
-    
-    # compute pair counts
-    dd_res = DD(1, nthreads, bins, xd, yd, zd, boxsize=boxsize, periodic=periodic, output_ravg=True)
-    rr_res = DD(1, nthreads, bins, xr, yr, zr, boxsize=boxsize, periodic=periodic, output_ravg=True)
-
-    dd = np.array([x['npairs'] for x in dd_res], dtype=dtype)
-    rr = np.array([x['npairs'] for x in rr_res], dtype=dtype)
-
-    ndpairs = len(data) * (len(data)-1)
-    nrpairs = len(rand) * (len(rand)-1)
-
-    counts = np.divide(dd, rr, where=(rr!=0.), out=np.zeros_like(rr), dtype=dtype)
-
-    return binavg, nrpairs / ndpairs * counts - 1

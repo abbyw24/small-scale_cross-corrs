@@ -76,3 +76,26 @@ def get_ra_dec(sample, chi):
         observer = np.array([0, 0, chi])
     ra, dec = CartesiantoEquatorial(s, observer)
     return ra, dec
+
+
+def remove_values(array, minimum=None, maximum=None, axis=0, verbose=True):
+    idx = np.full(array.shape[axis], True)
+    if minimum is not None:
+        idx = idx & np.all(array >= minimum, axis=axis+1)
+    if maximum is not None:
+        idx = idx & np.all(array <= maximum, axis=axis+1)
+    if verbose and np.sum(~idx):
+        print(f"removing {np.sum(~idx)} values")
+    array = np.delete(array, ~idx, axis=axis)
+    return array
+
+
+def r_from_rppi(rp, pi):
+    r_arr = np.empty((len(rp), len(pi)))
+    for i, rp_ in enumerate(rp):
+        for j, pi_ in enumerate(pi):
+            r_arr[i,j] = np.sqrt(rp_**2 + pi_**2)
+            # if r_arr[i,j] > max(r_avg):
+            #     print(f"r to evaluate ({r_arr[i,j]:.3f} Mpc/h) is greater than max r_avg ({max(r_avg):.3f})!")
+            #     continue
+    return r_arr

@@ -11,11 +11,12 @@ import corrfuncs
 import tools
 
 
-def get_linear_bias(gal_pos, sim, nx=500,
-                r_edges=np.logspace(np.log10(1), np.log10(100.), 21),
-                bias_range=(8,-5), return_ratio=False):
+def get_linear_bias(gal_pos, sim, method='cross_dm',
+                    rmin=1, rmax=100, nbins=20, logbins=True,
+                    nx=500, randmult=3, periodic=False):
     """
-    Returns the linear bias given a galaxy sample and an input TNG `sim` object.
+    Returns the linear bias as a function of comoving separation b(r),
+    given a galaxy sample and an input TNG `sim` object.
 
     Parameters
     ----------
@@ -23,57 +24,58 @@ def get_linear_bias(gal_pos, sim, nx=500,
         A (N,3) array of galaxy positions (x,y,z).
     sim : TNGSim object
 
+    method : str ('cross_dm' or 'auto_gal'), optional
+        Which formula to use in the calculation. 'cross_dm' loads the dark matter particle positions
+        from the TNG snapshot, computes the cross-correlation between the galaxy and dark matter
+        (subsampled with `nx`), and returns the ratio between the cross-correlation and the linear
+        matter correlation function. 'auto_gal' computes the galaxy auto-correlation and returns the
+        square root of the ratio between the auto-correlation and the linear matter correlation function.
+        The default is 'cross_dm'.
+    rmin : float, optional
+
+    rmax : float, optional
+
+    nbins : int, optional
+
+    logbins : bool, optional
+
     nx : int, optional
-        Subsample parameter for dark matter, to reduce computation time: take every `nx`th particle.
-        The default is 500.
-    r_edges : 1darray, optional
-        The separation bins to use when computing the pair counts.
-    bias_range : len(2) tuple, optional
-        The lower and upper indices to use to compute the bias from the ratio of the 3D c.f.s,
-        gal. x DM to linear theory (DM x DM).
-        The default is (8,-5), based on a few trials with the default `r_edges`.
-    return_ratio : bool, optional
-        Whether to return the `len(r_edges)-1` ratio of xi(gal x DM)) to xi(lin)—if we don't trust
-        the input `bias_range` without looking at this curve by eye.
+        Subsample parameter for dark matter (if 'cross_dm'), to reduce computation time:
+        take every `nx`th particle. The default is 500.
+    randmult : int, optional
+        Multiplication factor for number of random particles used in the pair counts IF `method`
+        is 'auto_gal', otherwise not used (this is effectively determined by `nx` for 'cross_dm').
+        The default is 3.
+    periodic : bool, optional
+        Whether to compute the pair counts on a periodic box, passed to Corrfunc.
 
     Returns
     -------
-    bias : float
-        The linear galaxy bias: the mean ratio of xi(gal x DM) to xi(lin) over `bias_range`.
+    bias : 1D array of length nbins+1
+        The linear galaxy bias as a function of comoving separation b(r).
 
     """
 
-    # bias: Gal x DM / linear theory
-    dm_pos = tools.get_subsample(sim.dm_pos(), nx=nx).value  # underlying dark matter
-    L = sim.boxsize.value
-    # corresponding random set
-    rand_pos = np.random.uniform(0, L, (len(dm_pos),3))
+    if method.lower() == 'cross_dm':
+        # load dark matter positions and randomly subsample
+        dm_pos = tools.get_subsample(sim.dm_pos(), nx=nx)
+        # Gal x DM cross correlation
+        ravg, galxdm = corrfuncs.compute_xi_cross(dm_pos, gal_pos, 1, rmin, rmax, nbins,
+                                                    boxsize=sim.boxsize, periodic=periodic)
+        # denominator is linear matter correlation function from Colossus
+        ratio = galxdm / tools.linear_2pcf(sim.redshift, ravg)
 
-    # format galaxy sample
-    gal_pos = gal_pos.value if isinstance(gal_pos, u.Quantity) else gal_pos
-    if np.amin(gal_pos) < 0:
-        gal_pos += L/2
-    for i, x in enumerate([dm_pos, rand_pos, gal_pos]):
-        assert 0 < np.all(x) < L 
-    
-    # Gal x DM cross correlation
-    ravg, xix_spec = corrfuncs.xi_cross(gal_pos, dm_pos, rand_pos, r_edges, boxsize=L, dtype=float)
-
-    # linear theory from Colossus
-    xi_lin = tools.linear_2pcf(sim.redshift, ravg)
-
-    # ratio
-    ratio = xix_spec / xi_lin
-
-    if bias_range is None:
-        bias = np.nanmean(ratio)
+    elif method.lower() == 'auto_gal':
+        # Gal x Gal auto correlation
+        ravg, galxgal = corrfuncs.compute_xi_auto(gal_pos, randmult, rmin, rmax, nbins,
+                                                    boxsize=sim.boxsize, periodic=periodic)
+        # denominator is linear matter correlation function from Colossus
+        ratio = np.sqrt(galxgal / tools.linear_2pcf(sim.redshift, ravg))
+        
     else:
-        bias = np.nanmean(ratio[bias_range[0]:bias_range[1]])
-    
-    if return_ratio == True:
-        return bias, ratio
-    else:
-        return bias
+        assert False, "input method must be 'cross_dm' or 'auto_gal'"
+
+    return ratio
         
 
 def powerspec_to_wlin(theta, ell, Cell):

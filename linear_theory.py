@@ -11,9 +11,9 @@ import corrfuncs
 import tools
 
 
-def get_linear_bias(gal_pos, sim, method='cross_dm',
+def get_linear_bias(gal_pos, redshift, method='cross_dm', dm_pos=None,
                     rmin=1, rmax=100, nbins=20, logbins=True,
-                    nx=500, randmult=3, periodic=False):
+                    nx=500, randmult=3, periodic=False, boxsize=None):
     """
     Returns the linear bias as a function of comoving separation b(r),
     given a galaxy sample and an input TNG `sim` object.
@@ -22,8 +22,8 @@ def get_linear_bias(gal_pos, sim, method='cross_dm',
     ----------
     gal_pos : 2darray
         A (N,3) array of galaxy positions (x,y,z).
-    sim : TNGSim object
-
+    redshift : float
+        Redshift of the galaxy sample.
     method : str ('cross_dm' or 'auto_gal'), optional
         Which formula to use in the calculation. 'cross_dm' loads the dark matter particle positions
         from the TNG snapshot, computes the cross-correlation between the galaxy and dark matter
@@ -31,6 +31,9 @@ def get_linear_bias(gal_pos, sim, method='cross_dm',
         matter correlation function. 'auto_gal' computes the galaxy auto-correlation and returns the
         square root of the ratio between the auto-correlation and the linear matter correlation function.
         The default is 'cross_dm'.
+    dm_pos : 2darray or None, optional
+        A (N,3) array of dark matter positions (x,y,z). Only used if `method=='cross_dm'`.
+        If `None`, `method` defaults to 'auto_gal'.
     rmin : float, optional
 
     rmax : float, optional
@@ -56,26 +59,28 @@ def get_linear_bias(gal_pos, sim, method='cross_dm',
 
     """
 
-    if method.lower() == 'cross_dm':
+    if method.lower() == 'cross_dm' and dm_pos is not None:
         # load dark matter positions and randomly subsample
-        dm_pos = tools.get_subsample(sim.dm_pos(), nx=nx)
+        dm_pos = tools.get_subsample(dm_pos, nx=nx)
         # Gal x DM cross correlation
         ravg, galxdm = corrfuncs.compute_xi_cross(dm_pos, gal_pos, 1, rmin, rmax, nbins,
-                                                    boxsize=sim.boxsize, periodic=periodic)
+                                                    boxsize=boxsize, periodic=periodic)
         # denominator is linear matter correlation function from Colossus
-        ratio = galxdm / tools.linear_2pcf(sim.redshift, ravg)
+        ratio = galxdm / tools.linear_2pcf(redshift, ravg)
 
-    elif method.lower() == 'auto_gal':
+    elif method.lower() == 'auto_gal' or dm_pos is None and method.lower() == 'cross_dm':
+        if method.lower() == 'cross_dm':
+            print("dm_pos not provided, defaulting to 'auto_gal' method")
         # Gal x Gal auto correlation
-        ravg, galxgal = corrfuncs.compute_xi_auto(gal_pos, randmult, rmin, rmax, nbins,
-                                                    boxsize=sim.boxsize, periodic=periodic)
+        ravg, galxgal = corrfuncs.compute_xi_auto(gal_pos, rmin, rmax, nbins, randmult=randmult,
+                                                    boxsize=boxsize, periodic=periodic)
         # denominator is linear matter correlation function from Colossus
-        ratio = np.sqrt(galxgal / tools.linear_2pcf(sim.redshift, ravg))
+        ratio = np.sqrt(galxgal / tools.linear_2pcf(redshift, ravg))
         
     else:
         assert False, "input method must be 'cross_dm' or 'auto_gal'"
 
-    return ratio
+    return ravg, ratio
         
 
 def powerspec_to_wlin(theta, ell, Cell):

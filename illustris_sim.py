@@ -29,18 +29,22 @@ class TNGSim():
         self.sim = str(sim)
         self.basepath = os.path.join(scratch, f'{sim}/output')
         if self.sim[:-2] == 'TNG300':
-            self.snapshots = [0, 4, 17, 25, 33, # z to 1.5
+            self.snapshots = [0, 4, 17, # z to 3.0
+                                25, 26, 27, 28, 29, 30, 31, 32, # 3.0 to 2.0
+                                33, 34, 35, 36, 37, 38, 39, # 2.0 to 1.5
                                 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, # 1.5 to 1.0
                                 50, 51, 52, 53, 54, 55, 56, 57, # 1.0 to 0.75
-                                58, 59, 63, 64, 65, 66, # 0.75 to 0.5
+                                58, 59, 60, 61, 62, 63, 64, 65, 66, # 0.75 to 0.5
                                 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, # 0.5 to 0.25
                                 81, 82, 84, 91, 99]  # 0.25 to 0.0
-            self.redshifts = [20.05, 10., 5., 3.01, 2.,
-                                1.5, 1.41, 1.36, 1.30, 1.25, 1.21, 1.15, 1.11, 1.07, 1.04,
-                                1., 0.95, 0.92, 0.89, 0.85, 0.82, 0.79, 0.76,
-                                0.73, 0.7, 0.6, 0.58, 0.55, 0.52,
-                                0.5, 0.48, 0.46, 0.44, 0.42, 0.4, 0.38, 0.36, 0.35, 0.33, 0.31, 0.3, 0.27, 0.26,
-                                0.24, 0.23, 0.2, 0.1, 0.]
+            self.redshifts = [20.05, 10.00, 5.00,
+                                3.01, 2.90, 2.73, 2.58, 2.44, 2.32, 2.21, 2.10,
+                                2.00, 1.90, 1.82, 1.74, 1.67, 1.60, 1.53,
+                                1.50, 1.41, 1.36, 1.30, 1.25, 1.21, 1.15, 1.11, 1.07, 1.04,
+                                1.00, 0.95, 0.92, 0.89, 0.85, 0.82, 0.79, 0.76,
+                                0.73, 0.70, 0.68, 0.64, 0.62, 0.60, 0.58, 0.55, 0.52,
+                                0.50, 0.48, 0.46, 0.44, 0.42, 0.40, 0.38, 0.36, 0.35, 0.33, 0.31, 0.3, 0.27, 0.26,
+                                0.24, 0.23, 0.20, 0.10, 0.]
             self.boxsize = 205 * (u.Mpc / u.littleh)
             assert len(self.snapshots) == len(self.redshifts)
         else:
@@ -60,12 +64,12 @@ class TNGSim():
         """
         if snapshot:
             assert redshift is None
-            assert snapshot in self.snapshots, "snapshot not found"
+            assert snapshot in self.snapshots, f"snapshot {snapshot} not found"
             self.snapshot = snapshot
             self.redshift = self.redshifts[self.snapshots.index(snapshot)]
         else:
             assert snapshot is None
-            assert redshift in self.redshifts, "snapshot not found"
+            assert redshift in self.redshifts, f"snapshot {snapshot} not found"
             self.redshift = redshift
             self.snapshot = self.snapshots[self.redshifts.index(redshift)]
     

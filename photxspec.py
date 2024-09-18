@@ -131,7 +131,7 @@ def construct_spherex_galaxy_samples(snapshots, sigma_z, ns=None, verbose=True):
         n = ns[i] if ns is not None else None
         
         gal_pos_spec = sim.subhalo_pos()[sim.gal_idx('','SPHEREx', sigma_z=sigma_z, n=n, verbose=verbose)]
-        gal_pos_spec = tools.remove_values(gal_pos_spec, minimum=0, maximum=sim.boxsize)
+        gal_pos_spec = tools.remove_values(gal_pos_spec, minimum=0, maximum=sim.boxsize, verbose=verbose)
         gal_pos_spec -= sim.boxsize / 2  # center at zero
         assert np.all(gal_pos_spec >= -sim.boxsize / 2) and np.all(gal_pos_spec <= sim.boxsize / 2), \
             f"galaxy positions out of bounds! min = {np.nanmin(gal_pos_spec):.3f}, max = {np.nanmax(gal_pos_spec):.3f}"
@@ -142,9 +142,6 @@ def construct_spherex_galaxy_samples(snapshots, sigma_z, ns=None, verbose=True):
     
     res = dict(redshifts=redshifts, chis=chis, gal_pos_specs=gal_pos_specs, boxsize=sim.boxsize)
     return res
-
-
-
 
 
 def Cellx_theory(gal_pos_photometric, gal_pos_spectroscopic, sim, thetaavg, losbins, ell=np.logspace(0, 6, 1000), nx=500,

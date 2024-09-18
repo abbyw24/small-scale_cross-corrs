@@ -89,7 +89,7 @@ def compute_xi_auto(data, rmin, rmax, nbins, randmult=3,
     return r_avg, xi
 
 
-def compute_wp_auto(data, randmult, rpmin, rpmax, nrpbins, pimax,
+def compute_wp_auto(data, rpmin, rpmax, nrpbins, pimax, randmult=3,
                     boxsize=None, logbins=True, nrepeats=1, nthreads=12, periodic=False):
     # prep data
     data_for_cf = set_up_cf_data(data, randmult=randmult, rmin=rpmin, rmax=rpmax, nbins=nrpbins,

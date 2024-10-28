@@ -488,3 +488,73 @@ class SPHEREx_param:
         sigmazbins = (sigmazbins_min + sigmazbins_max) / 2
 
         self.sigma_z_idx = np.where((self.sigma_z > sigmazbins_min) & (self.sigma_z <= sigmazbins_max))[0]
+
+
+class HSC_param:
+    '''
+    https://arxiv.org/pdf/2304.00701
+
+    '''
+
+    def __init__(self, z=0):
+
+        self.z = z
+
+        self._calc_params()
+
+    def _calc_params(self):
+        self._get_area()
+        self._get_density()
+
+    def _get_area(self):
+
+        self.survey_area_deg = 176 * (u.deg**2) # area of HSC Wide data in all 5 broadbands at full depth (Section 2.1)
+        
+        self.survey_area_sr = Adeg.to(u.sr)
+        
+        self.fsky = Asr / 4 / np.pi
+
+    def _get_density(self):
+
+        table = self.density_table()
+        
+        zbins_min, zbins_max = table['zbins_min'], table['zbins_max']
+        zidx = np.where((self.z >= zbins_min) & (self.z < zbins_max))[0]
+
+        # [dN/d(deg^2)/(dzbin)]
+        self.n_zbin_deg2 = table['ns'][zidx[0]]
+        self.zbin_min = zbins_min[zidx[0]]
+        self.zbin_max = zbins_max[zidx[0]]
+        
+        # [dN/dz/d(deg^2)]
+        self.n_z_deg2 = self.n_zbin_deg2 / (self.zbin_max - self.zbin_min)
+
+        # [dN/dz/dsr]
+        self.n_z_sr = self.n_zbin_deg2 * (u.deg**-2).to(u.sr**-1) \
+                        / (self.zbin_max - self.zbin_min)
+        
+        chi1 = cosmo.comoving_distance(self.zbin_max)
+        chi2 = cosmo.comoving_distance(self.zbin_min)
+        
+        dchi = (chi1 - chi2)
+        dA = (((chi1 + chi2) / 2) / (u.rad).to(u.deg))**2
+        dV = (dchi * dA).value * cosmo.h**3 # [(Mpc/h)**3]
+        
+        # [dN/d(Mpc/h)^3]
+        self.n_Mpc3 = self.n_zbin_deg2 / dV
+
+    def density_table(self):
+
+        data = np.load('../data/HSC_dNdz_colorcut.npy', allow_pickle=True).item()
+        zbinedges = data['zedges']
+        zbins_min = zbinedges[:-1]
+        zbins_max = zbinedges[1:]
+        zbins = data['zbins']
+        N = data['N']
+
+        dz = np.diff(zbins)
+        print(dz)
+        ns = N * dz
+
+        table = {'zbins': zbins, 'zbins_min': zbins_min, 'zbins_max': zmins_max,
+                   'ns': ns}

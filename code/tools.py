@@ -1,6 +1,7 @@
 import numpy as np
 from colossus.cosmology import cosmology
 import astropy.units as u
+import astropy.cosmology.units as cu
 import astropy.constants as c
 from astropy.cosmology import Planck15 as cosmo
 
@@ -8,7 +9,7 @@ from astropy.cosmology import Planck15 as cosmo
 CONVERSIONS
 """
 def perh():
-    return (cosmo.H(0.) / 100 * u.Mpc / u.km * u.s) / u.littleh
+    return (cosmo.H(0.) / 100 * u.Mpc / u.km * u.s) / cu.littleh
 
 def get_dx(z, sigma_z):
     return sigma_z * (1 + z) * c.c.to(u.km/u.s) / cosmo.H(z) * perh()
@@ -44,9 +45,12 @@ def get_ra_dec(sample, chi):
     Return the (RA,Dec) coordinates given (x,y,z) galaxy coordinates and comoving distance `chi`
     to the observer.
     """
+    # strip potential units
+    if isinstance(sample, u.Quantity):
+        sample = sample.value
     # convert photometric sample to (RA,Dec), setting LOS positions to box center
     s = np.copy(sample)
-    s[:,2] = 0 * s.unit
+    s[:,2] = 0
     if isinstance(chi, u.Quantity):
         observer = np.array([0, 0, chi.value]) << chi.unit
     else:
@@ -58,7 +62,7 @@ def get_ra_dec(sample, chi):
 """
 LINEAR 2-PT CORRELATION FUNCTION
 """
-def linear_2pcf(z, r, cosmo_model='planck15', runit=u.Mpc/u.littleh): # , k=np.logspace(-5.0, 2.0, 500)):
+def linear_2pcf(z, r, cosmo_model='planck15', runit=u.Mpc/cu.littleh): # , k=np.logspace(-5.0, 2.0, 500)):
     """
     Return the 2-pt. matter autocorrelation function at redshift `z` and scales `r` as predicted by linear theory from Colossus.
     """

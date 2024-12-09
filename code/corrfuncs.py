@@ -184,31 +184,29 @@ def compute_wp_cross(d1, d2, randmult, rpmin, rpmax, nbins, pimax, boxsize=None,
     """Estimate the 2D 2-pt. cross-correlation function."""
 
     # set up data: random set goes with tracers
-    d1forcf = set_up_cf_data(d1, randmult, rpmin, rpmax, nbins, boxsize=boxsize, zrange=zrange, logbins=logbins, dtype='float32')
-    rp_edges, rp_avg, nd1, boxsized1, _, _, d1_set = d1forcf.values()
-    d2forcf = set_up_cf_data(d2, randmult, rpmin, rpmax, nbins, boxsize=boxsize, zrange=zrange, logbins=logbins, dtype='float32')
-    rp_edges, rp_avg, nd2, boxsized2, nr, rand_set, d2_set = d2forcf.values()
-    assert boxsized1==boxsized2, "data sets must have the same boxsize!"
+    dataforcf = set_up_cf_data(d1, randmult, rpmin, rpmax, nbins, data2=d2, boxsize=boxsize,
+                                zrange=zrange, logbins=logbins, dtype='float32')
+    rp_edges, rp_avg, nd1, nd2, boxsize, nr, rand_set, d1_set, d2_set = dataforcf.values()
 
     # unpack
     xd1, yd1, zd1 = d1_set.T
     xd2, yd2, zd2 = d2_set.T
     x_rand, y_rand, z_rand = rand_set.T
 
-    d1d2_res = DDrppi(0, nthreads, pimax, rp_edges, xd1, yd1, zd1, X2=xd2, Y2=yd2, Z2=zd2, boxsize=boxsized1, periodic=periodic, output_rpavg=True)
+    d1d2_res = DDrppi(0, nthreads, pimax, rp_edges, xd1, yd1, zd1, X2=xd2, Y2=yd2, Z2=zd2, boxsize=boxsize, periodic=periodic, output_rpavg=True)
     if prints:
         print("D1D2 calculated")
-    d1r_res = DDrppi(0, nthreads, pimax, rp_edges, xd1, yd1, zd1, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsized1, periodic=periodic)
+    d1r_res = DDrppi(0, nthreads, pimax, rp_edges, xd1, yd1, zd1, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
     if prints:
         print("D1R calculated")
-    d2r_res = DDrppi(0, nthreads, pimax, rp_edges, xd2, yd2, zd2, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsized1, periodic=periodic)
+    d2r_res = DDrppi(0, nthreads, pimax, rp_edges, xd2, yd2, zd2, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
     if prints:
         print("D2R calculated")
     
     if rr_fn:
         rr_res = np.load(rr_fn, allow_pickle=True)
     else:
-        rr_res = DDrppi(1, nthreads, pimax, rp_edges, x_rand, y_rand, z_rand, boxsize=boxsized1, periodic=periodic)
+        rr_res = DDrppi(1, nthreads, pimax, rp_edges, x_rand, y_rand, z_rand, boxsize=boxsize, periodic=periodic)
     if prints:
         print("RR calculated")
 

@@ -6,6 +6,7 @@ import numpy as np
 import illustris_python as il 
 from astropy import table
 import astropy.units as u
+import astropy.cosmology.units as cu
 from colossus.cosmology import cosmology
 import os
 import sys
@@ -20,7 +21,7 @@ class TNGSim():
     Works with a single snapshot/redshift at a time.
     """
 
-    def __init__(self, sim, snapshot=None, redshift=None, scratch='/scratch1/08811/aew492'):
+    def __init__(self, sim, snapshot=None, redshift=None, scratch='/work2/08811/aew492/frontera'):
 
         # make sure we have passed either a snapshot or a redshift
         assert (snapshot is not None and redshift is None) or (snapshot is None and redshift is not None), \
@@ -36,7 +37,7 @@ class TNGSim():
                                 50, 51, 52, 53, 54, 55, 56, 57, # 1.0 to 0.75
                                 58, 59, 60, 61, 62, 63, 64, 65, 66, # 0.75 to 0.5
                                 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, # 0.5 to 0.25
-                                81, 82, 84, 91, 99]  # 0.25 to 0.0
+                                81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 99]  # 0.25 to 0.0
             self.redshifts = [20.05, 10.00, 5.00,
                                 3.01, 2.90, 2.73, 2.58, 2.44, 2.32, 2.21, 2.10,
                                 2.00, 1.90, 1.82, 1.74, 1.67, 1.60, 1.53,
@@ -44,8 +45,8 @@ class TNGSim():
                                 1.00, 0.95, 0.92, 0.89, 0.85, 0.82, 0.79, 0.76,
                                 0.73, 0.70, 0.68, 0.64, 0.62, 0.60, 0.58, 0.55, 0.52,
                                 0.50, 0.48, 0.46, 0.44, 0.42, 0.40, 0.38, 0.36, 0.35, 0.33, 0.31, 0.3, 0.27, 0.26,
-                                0.24, 0.23, 0.20, 0.10, 0.]
-            self.boxsize = 205 * (u.Mpc / u.littleh)
+                                0.24, 0.23, 0.21, 0.20, 0.18, 0.17, 0.15, 0.14, 0.13, 0.11, 0.10, 0.]
+            self.boxsize = 205 * (u.Mpc / cu.littleh)
             assert len(self.snapshots) == len(self.redshifts)
         else:
             assert False, "unknown simulation"
@@ -128,17 +129,17 @@ class TNGSim():
         """
         return np.where((self.SFR() > 0) & (self.stellar_mass() > 0))[0]
     
-    def subhalo_pos(self, unit=u.Mpc/u.littleh):
+    def subhalo_pos(self, unit=u.Mpc/cu.littleh):
         self._load_subfind_subhalos(fields=['SubhaloPos'])
-        return (self.subhalo_info['SubhaloPos'] * u.kpc / u.littleh).to(unit)
+        return (self.subhalo_info['SubhaloPos'] * u.kpc / cu.littleh).to(unit)
     
     def subhalo_mass(self):
         self._load_subfind_subhalos(fields=['SubhaloMass'])
-        return self.subhalo_info['SubhaloMass'] * 1e10 * u.M_sun / u.littleh # 4th col corresponds to star particles
+        return self.subhalo_info['SubhaloMass'] * 1e10 * u.M_sun / cu.littleh # 4th col corresponds to star particles
 
     def stellar_mass(self):
         self._load_subfind_subhalos(fields=['SubhaloMassType'])
-        return self.subhalo_info['SubhaloMassType'][:,4] * 1e10 * u.M_sun / u.littleh # 4th col corresponds to star particles
+        return self.subhalo_info['SubhaloMassType'][:,4] * 1e10 * u.M_sun / cu.littleh # 4th col corresponds to star particles
     
     def SFR(self):
         self._load_subfind_subhalos(fields=['SubhaloSFR'])
@@ -146,7 +147,7 @@ class TNGSim():
     
     def sSFR(self):
         """
-        Get specific star formation rates of subhalos (as returned in `_load_subfind_subhalos()`). \
+        Get specific star formation rates of subhalos (star formation rate per stellar mass) (as returned in `_load_subfind_subhalos()`). \
         Returns zero where stellar mass is zero.
         """
         return np.divide(self.SFR(), self.stellar_mass(), out=np.zeros_like(self.SFR()), where=self.stellar_mass()!=0)
@@ -154,11 +155,11 @@ class TNGSim():
 
     """ SNAPSHOTS """
 
-    def dm_pos(self, unit=u.Mpc/u.littleh, verbose=True):
+    def dm_pos(self, unit=u.Mpc/cu.littleh, verbose=True):
         """
         Load the (x,y,z) comoving coordinates of all DM particles.
         """
-        dm_pos = il.snapshot.loadSubset(self.basepath, self.snapshot, 'dm', ['Coordinates']) * u.kpc / u.littleh
+        dm_pos = il.snapshot.loadSubset(self.basepath, self.snapshot, 'dm', ['Coordinates']) * u.kpc / cu.littleh
         if verbose:
             print(f"loaded {len(dm_pos)} dark matter particles")
         return dm_pos.to(unit)
@@ -189,12 +190,12 @@ class TNGSim():
         """
         # target number of galaxies = volume * number density
         V = self.boxsize**3
-        if n:
-            self.n = n.to((u.littleh / u.Mpc)**3) if hasattr(n, 'unit') else n * (u.littleh / u.Mpc)**3
+        if n is not None:
+            self.n = n.to((cu.littleh / u.Mpc)**3) if hasattr(n, 'unit') else n * (cu.littleh / u.Mpc)**3
             if verbose:
                 print(f"input number density: {self.n.value:.2e} (h/Mpc)^3")
         else:
-            self.n = self.survey_params(survey, tracer_name, sigma_z).n_Mpc3 * (u.littleh / u.Mpc)**3
+            self.n = self.survey_params(survey, tracer_name, sigma_z).n_Mpc3 * (cu.littleh / u.Mpc)**3
             if verbose:
                 print(f"{tracer_name} number density for {survey} at z={self.redshift}: {self.n.value:.2e} (h/Mpc)^3")
         if verbose:

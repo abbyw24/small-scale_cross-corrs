@@ -2,10 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import astropy.units as u
+import astropy.cosmology.units as cu
 import pickle
 import os
 import sys
 
+sys.path.insert(0, '/work2/08811/aew492/frontera/venv/illustris3.9/lib/python3.9/site-packages')
 from illustris_sim import TNGSim
 import tools
 from xcorr_cases import SPHEREx_Xcorr
@@ -14,9 +16,9 @@ from xcorr_cases import SPHEREx_Xcorr
 def main():
     # main inputs
     snapshotss = [
-        np.arange(25, 37),  # center at z=2.3
+        np.arange(59, 76), # center at z~0.4
         np.arange(43, 58), # center at z=1.
-        np.arange(59, 76) # center at z~0.4
+        np.arange(25, 37) # center at z=2.3
     ]
     # the 5 redshift error bins in SPHEREx
     sigma_zs = [
@@ -27,37 +29,43 @@ def main():
         0.2
     ]
     # galaxy number density
-    density = 2e-3 * (u.littleh / u.Mpc)**3
+    density = 4e-4 * (cu.littleh / u.Mpc)**3
+
+    spherex_kwargs = dict(density_type='fixed', density=density)
 
     for snapshots in snapshotss:
         for sigma_z in sigma_zs:
-            run_analysis(snapshots, sigma_z, density, overwrite=True)
+            run_analysis(snapshots, sigma_z, overwrite=False, **spherex_kwargs)
 
 
-def run_analysis(snapshots, sigma_z, density, overwrite=False):
+def run_analysis(snapshots, sigma_z, overwrite=False, **spherex_kwargs):
 
     print(f"starting snapshots {min(snapshots)}-{max(snapshots)}, sigma_z={sigma_z}")
     # instantiate spherex set for cross-correlation
-    X = SPHEREx_Xcorr(snapshots, sigma_z, density_type='fixed', density=density)
+    X = SPHEREx_Xcorr(snapshots, sigma_z, **spherex_kwargs)
 
-    case_tag = f'z-{min(X.redshifts):.2f}-{max(X.redshifts):.2f}_sigma-z-{X.sigma_z}_ns-{X.density_type}_{density.value:.1e}'
+    # tags for saving
+    density_tag = X.ns_tag
+    if X.density_type == 'fixed':
+        density_tag += f'-{X.density.value:.1e}'
+    case_tag = f'z-{min(X.redshifts):.2f}-{max(X.redshifts):.2f}_sigma-z-{X.sigma_z}{density_tag}'
     
-    save_dir = os.path.join(X.scratch, 'TNG300-3/xcorr_res', case_tag)
+    save_dir = os.path.join(X.scratch, 'TNG300-3/xcorr_res/SPHEREx', case_tag)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     save_fn = os.path.join(save_dir, f'xcorr_object.pkl')
     if os.path.exists(save_fn) and not overwrite:
         print(f"already exists at {save_fn}")
-        continue
+        return
     
     # plot key info for this set
     fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(11,4), tight_layout=True)
     # number densities
     ax0.plot(X.redshifts, X.target_ns, 'k.', alpha=0.8, label='From lookup table')
-    ax0.plot(X.redshifts, X.ns, 'k-', alpha=0.5, label='Interpolated')
+    ax0.plot(X.redshifts, X.ns, 'k-', alpha=0.5, label='For mock TNG sample')
     ax0.grid(alpha=0.5, lw=0.5)
     ax0.set_xlabel(r'Redshift $z$')
-    ax0.set_ylabel(r'Target number density (Mpc/$h)^{-3}$')
+    ax0.set_ylabel(r'Number density (Mpc/$h)^{-3}$')
     ax0.legend()
     ax0.set_title(r'Galaxy number densities, $\sigma_z=$'f'{X.sigma_z}')
     # dN/dz
@@ -69,7 +77,7 @@ def run_analysis(snapshots, sigma_z, density, overwrite=False):
     # save
     fig.savefig(os.path.join(save_dir, 'densities_and_dNdz.png'))
     
-    # compute the spectroscopic galaxies in each snapshot
+    # construct the spectroscopic galaxies in each snapshot
     X.construct_spectroscopic_galaxy_samples()
     
     # plot

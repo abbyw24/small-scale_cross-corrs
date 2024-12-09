@@ -1,8 +1,10 @@
 import numpy as np
+from scipy import interpolate
 import time
 import os
 import sys
 import astropy.units as u
+import astropy.cosmology.units as cu
 
 from illustris_sim import TNGSim
 from xcorr import Xcorr
@@ -63,22 +65,22 @@ class SPHEREx_Xcorr(Xcorr):
         self.target_ns = np.array([
             TNGSim(self.sim, snapshot=snapshot).survey_params('SPHEREx', '', self.sigma_z).n_Mpc3 \
             for snapshot in self.snapshots
-        ]) * (u.littleh / u.Mpc)**3  # return units on the outside
+        ]) * (cu.littleh / u.Mpc)**3  # return units on the outside
 
         # do we want to keep these as they are, or interpolate,
         #   or take the mean for constant number density across all snapshots?
         if self.density_type == 'target':
             self.ns = self.target_ns
-            self.ns_tag = '_ns_target'
+            self.ns_tag = '_ns-target'
         elif self.density_type == 'interpolated':
             self.ns = tools.interpolate_number_densities(self.redshifts, self.target_ns)
-            self.ns_tag = '_ns_interp'
+            self.ns_tag = '_ns-interp'
         else:
             assert self.density_type == 'fixed'
-            self.ns_tag = '_ns_fixed'
+            self.ns_tag = '_ns-fixed'
             if density is not None:
-                self.density = density.to((u.littleh / u.Mpc)**3) if isinstance(density, u.Quantity) \
-                    else density * (u.littleh / u.Mpc)**3
+                self.density = density.to((cu.littleh / u.Mpc)**3) if isinstance(density, u.Quantity) \
+                    else density * (cu.littleh / u.Mpc)**3
                 self.ns = self.density * np.ones(len(self.snapshots))
             else:
                 self.ns = np.mean(self.target_ns) * np.ones(len(self.snapshots))
@@ -89,7 +91,6 @@ class SPHEREx_Xcorr(Xcorr):
         Gaussian distribution with width `dx` set by `sigma_z`.
         """
 
-        self.central_chi = np.nanmean(self.chis)
         self.dx = tools.get_dx(np.nanmean(self.redshifts), self.sigma_z)
 
         # at the snapshot centers
@@ -140,20 +141,28 @@ class HSC_Xcorr(Xcorr):
     def __init__(self, snapshots, photzbin,
                     density_type='interpolated',
                     density=None,                       # optional fixed density input
+                    reference_survey='DESI',            # survey to use for the reference sample
+                    reference_tracer='ELG',             # tracer to use in the reference sample
                     rpmin=0.1, rpmax=60, nrpbins=10,    # bins for projected c.f.
                     pimax_frac=0.45,                    # fraction of the boxsize for pimax
                     rmin=0.1, rmax=100, nbins=10,       # bins for full 3D c.f.
                     nrepeats=10, periodic=True, randmult=3,   # other inputs for both projected and full c.f.
                     sim='TNG300-3',
                     scratch='/scratch1/08811/aew492'):
+
+        # check inputs (all variables passed to Xcorr() are checked within that class)
+        assert density_type.lower() in ['interpolated', 'fixed', 'target'], \
+            "density_type must be one of 'interpolated', 'fixed', or 'target'"
+        self.density_type = density_type
         
         # which redshift bin
         assert photzbin in (0,1,2,3), "photometric redshift bin must be 0, 1, or 2"
         self.photzbin = photzbin
 
         # reference sample
-        self.reference_survey = 'DESI'
-        self.reference_tracer = 'ELG'
+        assert reference_survey.upper() in ['DESI', 'EBOSS']
+        self.reference_survey = reference_survey
+        self.reference_tracer = reference_tracer
 
         # loads key info, including redshifts and distance to the center of each snapshot
         super().__init__(snapshots, dNdz=None,  # dNdz is None until we get photometric weights
@@ -174,9 +183,6 @@ class HSC_Xcorr(Xcorr):
         """
         Using a DESI-like reference sample.
 
-        Bugs/Comments:
-        - hard-coded to use DESI ELGs rather than LRGs (add a toggle depending on photzbin?)
-
         """
 
         if density is not None:
@@ -184,24 +190,24 @@ class HSC_Xcorr(Xcorr):
 
         # get the "target" number densities from the DESI lookup table in TNGSim()
         self.target_ns = np.array([
-            TNGSim(self.sim, snapshot=snapshot).survey_params(self.reference_survey, self.reference_tracer, self.sigma_z).n_Mpc3 \
+            TNGSim(self.sim, snapshot=snapshot).survey_params(self.reference_survey, self.reference_tracer).n_Mpc3 \
             for snapshot in self.snapshots
-        ]) * (u.littleh / u.Mpc)**3  # return units on the outside
+        ]) * (cu.littleh / u.Mpc)**3  # return units on the outside
 
         # do we want to keep these as they are, or interpolate,
         #   or take the mean for constant number density across all snapshots?
         if self.density_type == 'target':
             self.ns = self.target_ns
-            self.ns_tag = '_ns_target'
+            self.ns_tag = '_ns-target'
         elif self.density_type == 'interpolated':
             self.ns = tools.interpolate_number_densities(self.redshifts, self.target_ns)
-            self.ns_tag = '_ns_interp'
+            self.ns_tag = '_ns-interp'
         else:
             assert self.density_type == 'fixed'
-            self.ns_tag = '_ns_fixed'
+            self.ns_tag = '_ns-fixed'
             if density is not None:
-                self.density = density.to((u.littleh / u.Mpc)**3) if isinstance(density, u.Quantity) \
-                    else density * (u.littleh / u.Mpc)**3
+                self.density = density.to((cu.littleh / u.Mpc)**3) if isinstance(density, u.Quantity) \
+                    else density * (cu.littleh / u.Mpc)**3
                 self.ns = self.density * np.ones(len(self.snapshots))
             else:
                 self.ns = np.mean(self.target_ns) * np.ones(len(self.snapshots))
@@ -214,16 +220,27 @@ class HSC_Xcorr(Xcorr):
 
         # load in data interpolated from Fig. 4
         photzdata = np.load(f'../data/HSC/HSC_dNdz_zbin{self.photzbin}.npy', allow_pickle=True).item()
+        self.photzdata = photzdata
+
+        # make sure the data spans the input redshifts
+        assert min(self.photzdata['z']) <= min(self.redshifts), \
+            f"min input redshift ({min(self.redshifts):.2f}) is less than min redshift in phot-z data"
+        assert max(self.photzdata['z']) >= max(self.redshifts), \
+            f"max input redshift ({max(self.redshifts):.2f}) is greater than max redshift in phot-z data"
 
         # interpolate to get the P(z) at each snapshot center
-        self.pz = np.interp(self.redshifts, photzdata['z'], photzdata['pz'])
+        f = interpolate.interp1d(photzdata['z'], photzdata['pz'])
+        pz = f(self.redshifts)
 
-        # make sure that P(z) integrates to 1
-        print("photometric distribution:", self.redshifts, self.pz)
-        print(sum(self.pz))
+        # normalize the area under the curve
+        area = np.trapz(pz, x=self.redshifts)
+        self.pz = pz / area
+
+        new_area = np.trapz(self.pz, x=self.redshifts)
+        assert np.allclose(new_area, 1.), f"P(z) normalized to {new_area:.3f} instead of 1"
 
         # this is dN/dz ! (this method comes from parent XCorr() class)
-        self.set_dNdz(self.W_phot)
+        self.set_dNdz(self.pz)
 
     
     def construct_spectroscopic_galaxy_samples(self, verbose=False):
@@ -238,7 +255,7 @@ class HSC_Xcorr(Xcorr):
             sim = TNGSim(self.sim, snapshot=snapshot)
             # get the positions of the subhalos that we're counting as galaxies
             gal_pos_spec = sim.subhalo_pos()[sim.gal_idx(self.reference_tracer, self.reference_survey,
-                                                sigma_z=self.sigma_z,
+                                                sigma_z=None,
                                                 n=self.ns[i],
                                                 verbose=verbose)]
             # remove any values which (still not sure why) fall just outside of the boxsize

@@ -41,7 +41,6 @@ class Xcorr():
 
         # inputs
         self.snapshots = snapshots.astype(int)
-        self.dNdz = dNdz
         self.rpmin = rpmin
         self.rpmax = rpmax 
         self.nrpbins = nrpbins
@@ -55,6 +54,9 @@ class Xcorr():
         self.sim = sim
         self.scratch = scratch
 
+        if dNdz is not None:
+            self.set_dNdz(dNdz)
+
         # separation bins
         self.rp_edges = np.logspace(np.log10(self.rpmin), np.log10(self.rpmax), self.nrpbins+1)
         self.rp_avg = 0.5 * (self.rp_edges[1:] + self.rp_edges[:-1])
@@ -63,6 +65,10 @@ class Xcorr():
 
         # get the redshift and comoving distance (chi) to the center of each snapshot
         self._get_snapshot_info()
+
+        # sort snapshots in decreasing order and redshifts in increasing order,
+        #   to deal with interpolation + integration schemes in other functions
+        self._sort_snapshots()
 
     
     def set_dNdz(self, dNdz):
@@ -81,9 +87,23 @@ class Xcorr():
             chis[i] = tools.redshift_to_comov(sim.redshift).value
         self.redshifts = redshifts
         self.chis = chis * tools.redshift_to_comov(sim.redshift).unit # and give units back to chis
+        self.central_chi = np.nanmean(self.chis)
         # also save other simulation info
         self.boxsize = sim.boxsize
         self.sim_basepath = sim.basepath
+
+    def _sort_snapshots(self):
+
+        # check that the input snapshots are monotonically increasing or decreasing
+        if strictly_increasing(self.snapshots):
+            assert strictly_decreasing(self.redshifts), "redshifts should be strictly decreasing if snapshots are strictly increasing"
+        else:
+            assert strictly_decreasing(self.snapshots), "input snapshots must be strictly increasing or strictly decreasing"
+            assert strictly_increasing(self.redshifts), "redshifts should be strictly increasing if snapshots are strictly decreasing"
+
+        self.snapshots = self.snapshots[::-1]
+        self.redshifts = self.redshifts[::-1]
+        self.chis = self.chis[::-1]
     
     def _fetch_gal_pos_specs(self, gal_pos_specs):
         if gal_pos_specs is None:
@@ -150,7 +170,7 @@ class Xcorr():
     
     def compute_xis_dark_matter(self, subsample=1, verbose=False):
 
-        xi_dms = np.full((len(self.snapshots), self.nbins)), np.nan)
+        xi_dms = np.full((len(self.snapshots), self.nbins), np.nan)
         for i, snapshot in enumerate(self.snapshots):
             sim = TNGSim(self.sim, snapshot=snapshot)
             dm_pos = tools.get_subsample(sim.dm_pos(verbose=verbose), verbose=verbose)
@@ -163,16 +183,17 @@ class Xcorr():
 
     def compute_angular_xcorrs_pair_counts(self, gal_pos_specs=None, verbose=True):
 
+        assert hasattr(self, 'dNdz'), \
+            "must set a photometric distribution dNdz before computing cross-correlation"
+
         gal_pos_specs = self._fetch_gal_pos_specs(gal_pos_specs)
 
         # compute necessary things if they haven't been already!
-        if not hasattr(self, 'W_phot'):
-            self.compute_photometric_weights(verbose=verbose)
         if not hasattr(self, 'wps'):
             self.compute_wps_pair_counts(gal_pos_specs, verbose=verbose)
         
         self.wthetax = np.array([
-            self.W_phot[i] * self.wps[i] for i in range(len(self.snapshots))
+            self.dNdz[i] * self.wps[i] for i in range(len(self.snapshots))
         ])
 
     ###
@@ -230,16 +251,17 @@ class Xcorr():
         self.theta_avg = self.r_comov_to_theta(self.rp_avg)
         self.wp_lins = wp_lins
 
-    def compute_angular_xcorrs_linear_theory(self, gal_pos_specs=None, matter_cf_type=matter_cf_type, verbose=True):
+    def compute_angular_xcorrs_linear_theory(self, gal_pos_specs=None, matter_cf_type='linear', verbose=True):
+
+        assert hasattr(self, 'dNdz'), \
+            "must set a photometric distribution dNdz before computing cross-correlation"
 
         # compute necessary things if they haven't been already!
-        if not hasattr(self, 'W_phot'):
-            self.compute_photometric_weights(verbose=verbose)
         if not hasattr(self, 'wp_lins') or gal_pos_specs is not None:
             self.compute_wps_linear_theory(gal_pos_specs=gal_pos_specs, matter_cf_type=matter_cf_type, verbose=verbose)
         
         self.wthetax_lin = np.array([
-            self.W_phot[i] * self.wp_lins[i] for i in range(len(self.snapshots))
+            self.dNdz[i] * self.wp_lins[i] for i in range(len(self.snapshots))
         ])
 
     ###
@@ -305,8 +327,7 @@ class Xcorr():
         self.bias_rmax = rmax
         self.bias_nbins = nbins
 
-        bias_dict = dict(sigma_z = self.sigma_z,
-                            redshifts = self.redshifts,
+        bias_dict = dict(redshifts = self.redshifts,
                             ns = self.ns,
                             r_avg = r_avg,
                             biases_r = biases_r,
@@ -323,3 +344,12 @@ class Xcorr():
         return tools.theta_to_r_comov(theta, np.mean(self.redshifts)).value
     def r_comov_to_theta(self, r):
         return tools.r_comov_to_theta(r, np.mean(self.redshifts)).value
+
+
+# to check monotonicity:
+
+def strictly_increasing(L):
+    return all(x<y for x, y in zip(L, L[1:]))
+
+def strictly_decreasing(L):
+    return all(x>y for x, y in zip(L, L[1:]))

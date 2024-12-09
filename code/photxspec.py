@@ -5,6 +5,7 @@ compute their cross correlations, and compare to the linear theory prediction.
 
 import numpy as np
 import astropy.units as u
+import astropy.cosmology.units as cu
 from astropy.cosmology import Planck15 as cosmo
 from colossus.cosmology import cosmology
 from scipy import special, integrate
@@ -40,10 +41,10 @@ def construct_photometric_sample(gal_pos_spec, dx, mean=None):
 def compute_wtheta_photxspec_single_snapshot(gal_pos_spec, redshift, sigma_z, boxsize, losbins, theta_edges):
     
     # prep inputs
-    gal_pos_spec = gal_pos_spec.to(u.Mpc/u.littleh) if isinstance(gal_pos_spec, u.Quantity) \
-                    else gal_pos_spec * u.Mpc/u.littleh
-    boxsize = boxsize.to(u.Mpc/u.littleh) if isinstance(boxsize, u.Quantity) else boxsize * u.Mpc/u.littleh
-    losbins = losbins.to(u.Mpc/u.littleh) if isinstance(losbins, u.Quantity) else losbins * u.Mpc/u.littleh
+    gal_pos_spec = gal_pos_spec.to(u.Mpc/cu.littleh) if isinstance(gal_pos_spec, u.Quantity) \
+                    else gal_pos_spec * u.Mpc/cu.littleh
+    boxsize = boxsize.to(u.Mpc/cu.littleh) if isinstance(boxsize, u.Quantity) else boxsize * u.Mpc/cu.littleh
+    losbins = losbins.to(u.Mpc/cu.littleh) if isinstance(losbins, u.Quantity) else losbins * u.Mpc/cu.littleh
     theta_edges = theta_edges.to(u.deg) if isinstance(theta_edges, u.Quantity) else theta_edges * u.deg
 
     # width of Gaussian for constructing the photometric sample
@@ -217,11 +218,11 @@ def get_photometric_weights(gal_pos_phot, boxsize, losbins):
     slicewidth = (losbins[1]-losbins[0])
     slice_centers = np.array([
         (losbins[i]+losbins[i+1])/2 for i in range(nslices)
-    ]) << u.Mpc / u.littleh
+    ]) << u.Mpc / cu.littleh
     
     # photometric
     slices_phot = [
-        gal_pos_phot[(losbins[i] <= gal_pos_phot[:,2]) & (gal_pos_phot[:,2] < losbins[i+1])] << u.Mpc / u.littleh \
+        gal_pos_phot[(losbins[i] <= gal_pos_phot[:,2]) & (gal_pos_phot[:,2] < losbins[i+1])] << u.Mpc / cu.littleh \
         for i in range(nslices)
     ]
     Nphot = len(gal_pos_phot)

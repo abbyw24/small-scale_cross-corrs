@@ -24,6 +24,11 @@ def r_comov_to_theta(r, redshift):
     return (r / (cosmo.kpc_comoving_per_arcmin(redshift).to(u.Mpc/u.deg) * perh()))
 
 def CartesiantoEquatorial(pos, observer=[0,0,0]):
+    """
+    Bug:
+    - pretty sure this doesn't work if pos[:,2] ≠ 0, but I need to do more detailed trig debugging
+    """
+
     pos_ = pos.value if isinstance(pos, u.Quantity) else pos
     if isinstance(observer, u.Quantity) and isinstance(pos, u.Quantity):
         observer = observer.to(pos.unit)
@@ -47,14 +52,14 @@ def get_ra_dec(sample, chi):
     """
     # strip potential units
     if isinstance(sample, u.Quantity):
-        sample = sample.value
-    # convert photometric sample to (RA,Dec), setting LOS positions to box center
-    s = np.copy(sample)
-    s[:,2] = 0
+        sample = sample.to(u.Mpc / cu.littleh).value
     if isinstance(chi, u.Quantity):
-        observer = np.array([0, 0, chi.value]) << chi.unit
-    else:
-        observer = np.array([0, 0, chi])
+        chi = chi.to(u.Mpc / cu.littleh).value
+    # convert photometric sample to (RA, Dec)
+    s = np.copy(sample)
+    observer = np.zeros_like(s)
+    observer[:,2] = s[:,2] + chi    # take z positions into account for LOS distance
+    s[:,2] = 0
     ra, dec = CartesiantoEquatorial(s, observer)
     return ra, dec
 

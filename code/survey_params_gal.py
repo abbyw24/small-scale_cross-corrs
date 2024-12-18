@@ -229,8 +229,8 @@ class DESI_param:
         z, n = np.load(f'../data/DESI/DESI_{self.tracer_name}_density.npy').T
 
         # check that the input redshift is within the data range
-        assert (self.z >= min(z)) & (self.z <= max(z)), \
-            f"input redshift ({self.z}) outside density table range ({min(z):.2f}-{max(z):.2f})"
+        if (self.z <= min(z)) or (self.z >= max(z)):
+            print(f"warning! input redshift ({self.z}) outside DESI density table range ({min(z):.2f}-{max(z):.2f})")
 
         n *= 1e-4  # units in plot (Mpc/h)^3
 
@@ -375,7 +375,7 @@ class HSC_param:
         # total number of galaxies in this redshift bin
         self.N = self.n_sr * self.survey_area_sr
 
-        zidx = np.argmin(np.abs(z[self.zbin] - self.z))
+        zidx = np.argmin(np.abs(z - self.z))
         self.Pz = Pz[zidx]
 
         # total number of galaxies at this redshift
@@ -393,9 +393,8 @@ class HSC_param:
         # then the volume is
         dV = dchi * A * (cosmo.h / cu.littleh)**3 # [(Mpc/h)^3]
 
-        # so the target number density is n(z) [(h/Mpc)^3] = n(z) [sr^(-1)] / dV
-        self.n_Mpc3 = self.N_z.value / dV
-        # print(f"target number density = {self.n_Mpc3.value:.3e}")
+        # so the target number density is n(z) [(h/Mpc)^3] = N(z) / dV[Mpc^3/h^3]
+        self.n_Mpc3 = self.N_z.value / dV.value
     
 
     def density_table(self):
@@ -410,7 +409,7 @@ class HSC_param:
         """
 
         if self.zbin is not None:
-            data = np.load(f'../data/HSC/HSC_dNdz_zbin{zbin}.npy', allow_pickle=True).item()
+            data = np.load(f'../data/HSC/HSC_dNdz_zbin{self.zbin}.npy', allow_pickle=True).item()
             assert (self.z >= min(data['z'])) & (self.z <= max(data['z'])), \
                 f"input redshift ({self.z:.2f}) outside of zbin {self.zbin} range ({min(data['z']):.2f}-{max(data['z']):.2f})"
 
@@ -418,6 +417,7 @@ class HSC_param:
             Pz_thisbin = data['pz']
         
         else:
+            # print(self.z) # !!
             # load data for all bins
             z = []
             Pz = []
@@ -428,8 +428,10 @@ class HSC_param:
 
             Pz_target = []
             for zbin in range(0, 4):
+                # print(f"redshift range in bin {zbin}: ", min(z[zbin]), max(z[zbin]))
                 if (self.z >= min(z[zbin])) & (self.z <= max(z[zbin])):
                     idx = np.argmin(np.abs(z[zbin] - self.z))
+                    # print(zbin, idx, z[zbin][idx], Pz[zbin][idx]) # !!
                     Pz_target.append(Pz[zbin][idx])
                 else:
                     Pz_target.append(0)

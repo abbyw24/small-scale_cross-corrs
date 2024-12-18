@@ -56,19 +56,21 @@ class Xcorr():
 
         if dNdz is not None:
             self.set_dNdz(dNdz)
-
-        # separation bins
-        self.rp_edges = np.logspace(np.log10(self.rpmin), np.log10(self.rpmax), self.nrpbins+1)
-        self.rp_avg = 0.5 * (self.rp_edges[1:] + self.rp_edges[:-1])
-        self.r_edges = np.logspace(np.log10(self.rmin), np.log10(self.rmax), self.nbins+1)
-        self.r_avg = 0.5 * (self.r_edges[1:] + self.r_edges[:-1])
-
+        
         # get the redshift and comoving distance (chi) to the center of each snapshot
         self._get_snapshot_info()
 
         # sort snapshots in decreasing order and redshifts in increasing order,
         #   to deal with interpolation + integration schemes in other functions
         self._sort_snapshots()
+
+        # separation bins
+        self.rp_edges = np.logspace(np.log10(self.rpmin), np.log10(self.rpmax), self.nrpbins+1)
+        self.rp_avg = 0.5 * (self.rp_edges[1:] + self.rp_edges[:-1])
+        self.r_edges = np.logspace(np.log10(self.rmin), np.log10(self.rmax), self.nbins+1)
+        self.r_avg = 0.5 * (self.r_edges[1:] + self.r_edges[:-1])
+        # pimax, now that we have the boxsize attribute
+        self.pimax = int(self.pimax_frac * self.boxsize.value)
 
     
     def set_dNdz(self, dNdz):
@@ -114,60 +116,111 @@ class Xcorr():
         else:
             return gal_pos_specs
 
+    def _fetch_gal_pos_phots(self, gal_pos_phots):
+        if gal_pos_phots is None:
+            if hasattr(self, 'gal_pos_phots'):
+                return self.gal_pos_phots
+            else:
+                raise AttributeError("no gal_pos_phots attribute, and no gal_pos_phots input")
+        else:
+            return gal_pos_phots
 
     """
     Correlation functions
     """
     ###
-    # PAIR COUNTS: require input spectroscopic galaxy samples
+    # PAIR COUNTS: require input spectroscopic (and/or photometric) galaxy samples
     ###
-    def compute_wps_pair_counts(self, gal_pos_specs=None, verbose=False):
+    def compute_auto_xis(self, gal_pos=None, verbose=False):
         """
-        Computes the projected auto-correlation from input spectroscopic galaxies in each snapshot.
+        Computes the 3D auto-correlation from a set of galaxy positions in each snapshot.
         """
-        gal_pos_specs = self._fetch_gal_pos_specs(gal_pos_specs)
-
-        assert len(gal_pos_specs) == len(self.snapshots), \
-            "length input gal_pos_specs must equal the number of snapshots"
-
-        # pimax, now that we have the boxsize attribute
-        self.pimax = int(self.pimax_frac * self.boxsize.value)
-
-        # compute and store wp(rp) from each reference galaxy sample
-        wps = np.full((len(self.snapshots), self.nrpbins), np.nan)
-        for i, gal_pos_spec in enumerate(gal_pos_specs):
-            if verbose == True:
-                end = '\n' if i == len(gal_pos_specs)-1 else '\r'
-                print(f"computing projected autocorr. from pair counts:\t{i+1} of {len(self.snapshots)} (z={self.redshifts[i]:.2f})",
-                        end=end)
-            rp_avg, wps[i] = corrfuncs.compute_wp_auto(gal_pos_spec,
-                                    self.rpmin, self.rpmax, self.nrpbins, self.pimax,
-                                    randmult=self.randmult, boxsize=self.boxsize, logbins=True,
-                                    nrepeats=self.nrepeats, periodic=self.periodic)
-        assert np.all(rp_avg == self.rp_avg)
-        self.theta_avg = self.r_comov_to_theta(self.rp_avg)
-        self.wps = wps
-
-    def compute_xis_pair_counts(self, gal_pos_specs=None, verbose=False):
-        """
-        Computes the 3D auto-correlation from the spectroscopic galaxies in each snapshot.
-        """
-        gal_pos_specs = self._fetch_gal_pos_specs(gal_pos_specs)
 
         # compute the pair counts
         xis = np.full((len(self.snapshots), self.nbins), np.nan)
-        for i, gal_pos_spec in enumerate(gal_pos_specs):
+        for i, gal_pos_arr in enumerate(gal_pos):
             if verbose == True:
-                end = '\n' if i == len(gal_pos_specs)-1 else '\r'
+                end = '\n' if i == len(gal_pos)-1 else '\r'
                 print(f"computing 3D autocorr. from pair counts:\t{i+1} of {len(self.snapshots)} (z={redshift:.2f})",
                         end=end)
-            r_avg, xis[i] = corrfuncs.compute_xi_auto(gal_pos_spec,
+            r_avg, xis[i] = corrfuncs.compute_xi_auto(gal_pos_arr,
                                     self.rmin, self.rmax, self.nbins,
                                     randmult=self.randmult, boxsize=self.boxsize, logbins=True,
                                     nrepeats=self.nrepeats, periodic=self.periodic)
         assert np.all(r_avg == self.r_avg)
-        self.xis = xis
-    
+
+        return xis
+
+    def compute_auto_wps(self, gal_pos=None, verbose=False):
+        """
+        Computes the projected auto-correlation from a set of galaxy positions in each snapshot.
+        """
+
+        if gal_pos is not None:
+            assert len(gal_pos) == len(self.snapshots), \
+                "length input gal_pos must equal the number of snapshots"
+
+        # compute and store wp(rp) from each reference galaxy sample
+        wps = np.full((len(self.snapshots), self.nrpbins), np.nan)
+        for i, gal_pos_arr in enumerate(gal_pos):
+            if verbose == True:
+                end = '\n' if i == len(gal_pos)-1 else '\r'
+                print(f"computing projected autocorr. from pair counts:\t{i+1} of {len(self.snapshots)} (z={self.redshifts[i]:.2f})",
+                        end=end)
+            rp_avg, wps[i] = corrfuncs.compute_wp_auto(gal_pos_arr,
+                                    self.rpmin, self.rpmax, self.nrpbins, self.pimax,
+                                    randmult=self.randmult, boxsize=self.boxsize, logbins=True,
+                                    nrepeats=self.nrepeats, periodic=self.periodic)
+        assert np.all(rp_avg == self.rp_avg)
+
+        return wps
+
+    def compute_wpx(self, gal_pos_phots=None, gal_pos_specs=None, verbose=False):
+        """
+        Computes the projected cross-correlation between the photometric and spectroscopic galaxy
+        positions in each snapshot.
+        """
+
+        gal_pos_phots = self._fetch_gal_pos_phots(gal_pos_phots)
+        gal_pos_specs = self._fetch_gal_pos_specs(gal_pos_specs)
+
+        # compute nad store wp(rp) in each snapshot
+        wpxs = np.full((len(self.snapshots), self.nrpbins), np.nan)
+        for i in range(len(self.snapshots)):
+            if verbose == True:
+                end = '\n' if i == len(gal_pos_phots)-1 else '\r'
+                print(f"computing projected cross-corr. from pair counts:\t{i+1} of {len(self.snapshots)} (z={self.redshifts[i]:.2f})",
+                        end=end)
+            rp_avg, wpxs[i] = corrfuncs.compute_wp_cross(gal_pos_phots[i], gal_pos_specs[i],
+                                                        self.rpmin, self.rpmax, self.nrpbins, self.pimax,
+                                                        randmult=self.randmult, boxsize=self.boxsize, logbins=True,
+                                                        nrepeats=self.nrepeats, periodic=self.periodic)
+        assert np.all(rp_avg == self.rp_avg)
+
+        return wpxs
+
+    # specific functions to add attributes for spectroscopic and photometric samples
+
+    def compute_xis_specs(self, gal_pos_specs=None, verbose=False):
+        gal_pos_specs = self._fetch_gal_pos_specs(gal_pos_specs)
+        
+        self.xis_specs = self.compute_auto_xis(gal_pos_specs, verbose=verbose)
+
+    def compute_xis_phots(self, gal_pos_phots=None, verbose=False):
+        gal_pos_phots = self._fetch_gal_pos_phots(gal_pos_phots)
+
+        self.xis_phots = self.compute_auto_xis(gal_pos_phots, verbose=verbose)
+
+    def compute_wps_specs(self, gal_pos_specs=None, verbose=False):
+        gal_pos_specs = self._fetch_gal_pos_specs(gal_pos_specs)
+        
+        self.wps_specs = self.compute_auto_xis(gal_pos_specs, verbose=verbose)
+
+    def compute_wps_phots(self, gal_pos_phots=None, verbose=False):
+        gal_pos_phots = self._fetch_gal_pos_phots(gal_pos_phots)
+
+        self.wps_phots = self.compute_auto_xis(gal_pos_phots, verbose=verbose)
+
     def compute_xis_dark_matter(self, subsample=1, verbose=False):
 
         xi_dms = np.full((len(self.snapshots), self.nbins), np.nan)
@@ -181,37 +234,88 @@ class Xcorr():
         assert np.all(r_avg == self.r_avg)
         self.xi_dms = xi_dms
 
-    def compute_angular_xcorrs_pair_counts(self, gal_pos_specs=None, verbose=True):
+    def compute_wthetax_from_wps_pair_counts(self, gal_pos_phots=None, gal_pos_specs=None, cross=False, verbose=True):
 
         assert hasattr(self, 'dNdz'), \
             "must set a photometric distribution dNdz before computing cross-correlation"
 
         gal_pos_specs = self._fetch_gal_pos_specs(gal_pos_specs)
-
-        # compute necessary things if they haven't been already!
-        if not hasattr(self, 'wps'):
-            self.compute_wps_pair_counts(gal_pos_specs, verbose=verbose)
+        # if we want to compute the projected CROSS-correlation, also get the photometric sample
+        if cross == True:
+            gal_pos_phots = self._fetch_gal_pos_phots(gal_pos_phots)
+            wps = self.compute_wpx(gal_pos_phots, gal_pos_specs, verbose=verbose)
+        # otherwise, compute the projected autocorrelation from the spectroscopic sample
+        else:
+            wps = self.compute_auto_xis(gal_pos_specs, verbose=verbose)
         
         self.wthetax = np.array([
             self.dNdz[i] * self.wps[i] for i in range(len(self.snapshots))
         ])
 
+    # def compute_wthetax_from_pair_counts(self, gal_pos_phots=None, gal_pos_specs=None, verbose=True):
+
+    #     gal_pos_phots = self._fetch_gal_pos_phots(gal_pos_phots)
+    #     gal_pos_specs = self._fetch_gal_pos_specs(gal_pos_specs)
+
+    #     theta_avg = np.full((len(self.snapshots), self.nbins), np.nan)
+    #     wthetax = np.copy(theta_avg)
+    #     for i, snapshot in enumerate(self.snapshots):
+
+    #         if verbose:
+    #             print(f"snapshot {i+1} of {len(self.snapshots)}: prepping data for corrfunc computation", flush=True)
+    #         # set up for c.f. computation (mainly to get random set)
+    #         dataforcf = corrfuncs.set_up_cf_data(gal_pos_phots[i], self.randmult, self.rpmin, self.rpmax, self.nbins,
+    #                                 data2=gal_pos_specs[i], boxsize=self.boxsize, logbins=True)
+    #         rp_edges, rp_avg, nd1, nd2, boxsize, nr, rand_set, d1_set, d2_set = dataforcf.values()
+    #         assert np.allclose(rp_edges, self.rp_edges)
+
+    #         # convert bin edges to angles
+    #         theta_edges = tools.r_comov_to_theta(rp_edges, self.redshifts[i]).value
+
+    #         # convert (x,y,z) -> (RA, Dec)
+    #         ra_phot, dec_phot = tools.get_ra_dec(gal_pos_phots[i], self.chis[i])
+    #         ra_spec, dec_spec = tools.get_ra_dec(gal_pos_specs[i], self.chis[i])
+    #         # convert random (x,y,z) -> (RA, Dec)
+    #         ra_rand, dec_rand = tools.get_ra_dec(rand_set, self.chis[i])
+
+    #         if verbose:
+    #             print(f"snapshot {i+1} of {len(self.snapshots)}: computing angular xcorr from pair counts", flush=True)
+    #         theta_avg[i], wthetax[i] = corrfuncs.wtheta_cross_PH(ra_phot, dec_phot,
+    #                                      ra_spec, dec_spec, ra_rand, dec_rand, theta_edges)
+    #     self.theta_avg = theta_avg
+    #     self.wthetax = wthetax
+
+
     ###
     # LINEAR THEORY
     ###
-    def compute_xis_linear_theory(self, bias_fn=None, gal_pos_specs=None, matter_cf_type='linear',
-                                    dm_subsample=1000, verbose=False):
+    def compute_xis_linear_theory(self, gal_pos_phots=None, gal_pos_specs=None, cross=False,
+                                    matter_cf_type='linear', dm_subsample=1000, verbose=False):
         """
         Computes the 3D auto-correlation from linear theory.
         """
 
-        self.get_bias(bias_fn, gal_pos_specs, verbose=verbose)
+        # fetch the spectroscopic galaxies, since we need them no matter what
+        gal_pos_specs = self._fetch_gal_pos_specs(gal_pos_specs)
+        # compute the bias in the spectroscopic sample
+        bias_spec = self.compute_bias(gal_pos_specs)['biases']
+
+        # if we want to compute the cross-correlation between the photometric and spectroscopic samples,
+        #   then we need the bias in the spectroscopic _and_ photometric samples
+        if cross == True:
+            gal_pos_phots = self._fetch_gal_pos_phots(gal_pos_phots)
+            bias_phot = self.compute_bias(gal_pos_phots)['biases']
+            # the bias term is the photometric bias * the spectroscopic bias
+            bias_term = bias_phot * bias_spec
+        else:
+            # if we're just using the spectroscopic sample, the bias term is the spectroscopic bias squared
+            bias_term = bias_spec**2
 
         # galaxy c.f. is the matter c.f. times the bias squared
         if matter_cf_type.lower() == 'linear':
             self.matter_cf_type = 'linear'
             self.xi_lins = np.array([
-                self.biases[i] * tools.linear_2pcf(redshift, self.r_avg) \
+                bias_term[i] * tools.linear_2pcf(redshift, self.r_avg) \
                     for i, redshift in enumerate(self.redshifts)
             ])
         else:
@@ -223,18 +327,18 @@ class Xcorr():
                 print("computing autocorr. from dark matter particles")
             self.compute_xis_dark_matter()
             self.xi_lins = np.array([
-                self.biases[i] * self.xi_dms[i] for i in range(len(self.snapshots))
+                bias_term[i] * self.xi_dms[i] for i in range(len(self.snapshots))
             ])
     
-    def compute_wps_linear_theory(self, gal_pos_specs=None, matter_cf_type='linear', verbose=False):
+    def compute_wps_linear_theory(self, gal_pos_phots=None, gal_pos_specs=None, cross=False,
+                                    matter_cf_type='linear', verbose=False):
         """
         Computes the projected auto-correlation from the linear theory 3D auto-correlation
         (hence assumes isotropy).
         """
-        if verbose == True:
-            print("computing projected autocorr. from linear theory")
 
-        self.compute_xis_linear_theory(gal_pos_specs=gal_pos_specs, matter_cf_type=matter_cf_type, verbose=verbose)
+        xis = self.compute_xis_linear_theory(gal_pos_phots, gal_pos_specs, cross,
+                                                matter_cf_type=matter_cf_type, verbose=verbose)
         
         # populate 2D array of separation r from each (r_p, pi) pair
         rp = self.rp_avg
@@ -248,60 +352,31 @@ class Xcorr():
             xi_lin_arr = np.exp(np.interp(np.log(r_arr), np.log(self.r_avg), np.log(xi_lin)))
             # sum over pi / r_parallel to get 1D wp(rp)
             wp_lins[i] = 2.0 * integrate.trapz(xi_lin_arr, x=pi, axis=0) 
-        self.theta_avg = self.r_comov_to_theta(self.rp_avg)
         self.wp_lins = wp_lins
 
-    def compute_angular_xcorrs_linear_theory(self, gal_pos_specs=None, matter_cf_type='linear', verbose=True):
+    def compute_wthetax_linear_theory(self, gal_pos_phots=None, gal_pos_specs=None, cross=False,
+                                        matter_cf_type='linear', verbose=True):
 
         assert hasattr(self, 'dNdz'), \
             "must set a photometric distribution dNdz before computing cross-correlation"
 
-        # compute necessary things if they haven't been already!
-        if not hasattr(self, 'wp_lins') or gal_pos_specs is not None:
-            self.compute_wps_linear_theory(gal_pos_specs=gal_pos_specs, matter_cf_type=matter_cf_type, verbose=verbose)
+        # compute the projected correlation function from linear theory
+        self.compute_wps_linear_theory(gal_pos_phots=gal_pos_phots, gal_pos_specs=gal_pos_specs, cross=cross,
+                                        matter_cf_type=matter_cf_type, verbose=verbose)
         
+        # weight the result in each snapshot by the corresponding dNdz
         self.wthetax_lin = np.array([
             self.dNdz[i] * self.wp_lins[i] for i in range(len(self.snapshots))
         ])
-
-    ###
-    # ANGULAR CROSS-CORRELATIONS from both pair counts and linear theory
-    ###
-    def compute_angular_xcorrs(self, gal_pos_specs=None, verbose=False):
-
-        gal_pos_specs = self._fetch_gal_pos_specs(gal_pos_specs)
-
-        print(f"computing angular xcorrs from pair counts")
-        self.compute_angular_xcorrs_pair_counts(gal_pos_specs=gal_pos_specs, verbose=verbose)
-        print(f"computing angular xcorrs from linear theory")
-        self.compute_angular_xcorrs_linear_theory(gal_pos_specs=gal_pos_specs, verbose=verbose)
     
 
     """
     Galaxy bias
     """
-    def get_bias(self, bias_fn=None, gal_pos_specs=None, method='auto_gal', rmin=1, rmax=100, nbins=10,
+    def calculate_bias(self, gal_pos, method='auto_gal', rmin=1, rmax=100, nbins=10,
                         r_range=(5, 30), verbose=False):
 
-        # if file is input, try to load the bias dictionary
-        if bias_fn is not None:
-            self.bias_dict = np.load(bias_fn, allow_pickle=True).item()
-            self.bias_fn = bias_fn
-        # otherwise calculate the bias from the input spectroscopic galaxies
-        else:
-            assert gal_pos_specs is not None, \
-                "must input gal_pos_specs if input bias_fn is None"
-            self.bias_dict = self.calculate_bias(gal_pos_specs, method=method,
-                                                    rmin=rmin, rmax=rmax, nbins=nbins,
-                                                    r_range=r_range, verbose=verbose)
-        self.biases = self.bias_dict['biases']
-
-    
-    def calculate_bias(self, gal_pos_specs=None, method='auto_gal', rmin=1, rmax=100, nbins=10,
-                        r_range=(5, 30), verbose=False):
-
-        gal_pos_specs = self._fetch_gal_pos_specs(gal_pos_specs)
-
+        assert len(gal_pos) == len(self.snapshots)
         assert method in ['auto_gal', 'cross_dm']
 
         # get linear bias from spectroscopic sample
@@ -310,7 +385,7 @@ class Xcorr():
             if verbose == True:
                 end = '\n' if i == len(self.redshifts)-1 else '\r'
                 print(f"calculating bias:\t{i+1} of {len(self.redshifts)} (z={redshift:.2f})", end=end)
-            r_avg, biases_r[i] = linear_theory.get_linear_bias(gal_pos_specs[i],
+            r_avg, biases_r[i] = linear_theory.get_linear_bias(gal_pos[i],
                                         redshift=redshift, boxsize=self.boxsize, method=method,
                                         rmin=rmin, rmax=rmax, nbins=nbins,
                                         periodic=self.periodic)
@@ -349,7 +424,7 @@ class Xcorr():
 # to check monotonicity:
 
 def strictly_increasing(L):
-    return all(x<y for x, y in zip(L, L[1:]))
+    return all(x < y for x, y in zip(L, L[1:]))
 
 def strictly_decreasing(L):
-    return all(x>y for x, y in zip(L, L[1:]))
+    return all(x > y for x, y in zip(L, L[1:]))

@@ -50,11 +50,6 @@ class SPHEREx_Xcorr(Xcorr):
         # now we can get the photometric distribution, determined by sigma_z
         self._get_photometric_distribution()
 
-        # bias file name
-        self.bias_fn = os.path.join(self.scratch, self.sim, 'bias',
-                                f'bias_z-{min(self.redshifts):.2f}-{max(self.redshifts):.2f}_sigmaz-{self.sigma_z}' + \
-                                self.ns_tag + '.npy')
-
 
     def _get_number_densities(self, density):
 
@@ -126,6 +121,24 @@ class SPHEREx_Xcorr(Xcorr):
         
         self.gal_pos_specs = gal_pos_specs
 
+    """
+    primary cross-correlation calculation
+    """
+    def compute_angular_xcorrs(self, verbose=False):
+        """
+        Compute the angular cross-correlation in each snapshot from the projected auto-correlation of the
+        spectroscopic sample, weighted by the photometric dNdz.
+        And the linear theory prediction.
+        """
+
+        # PAIR COUNTS
+        self.compute_wthetax_from_wps_pair_counts(cross=False, verbose=verbose)
+            # cross = False means to only compute pair counts from the spectroscopic galaxy samples
+            #   (since for the SPHEREx case we don't construct a set of photometric galaxy positions)
+
+        # LINEAR THEORY
+        self.compute_wthetax_linear_theory(cross=False, verbose=verbose)
+
 
 class HSC_Xcorr(Xcorr):
     """
@@ -172,14 +185,26 @@ class HSC_Xcorr(Xcorr):
                         nrepeats=nrepeats, periodic=periodic, randmult=randmult,
                         sim=sim, scratch=scratch)
 
-        # target number densities
-        self._get_number_densities(density)
+        # number densities
+        self._get_photometric_number_densities()
+        self._get_spectroscopic_number_densities(density)
 
         # now we can get the photometric distribution based on input photzbin
         self._get_photometric_distribution()
 
 
-    def _get_number_densities(self, density):
+    def _get_photometric_number_densities(self):
+        """
+        HSC-like galaxy number densities.
+
+        """
+        self.ns_phot = np.array([
+            TNGSim(self.sim, snapshot=snapshot).survey_params('HSC', zbin=self.photzbin).n_Mpc3 \
+            for snapshot in self.snapshots
+        ]) * (cu.littleh / u.Mpc)**3  # return units on the outside
+
+
+    def _get_spectroscopic_number_densities(self, density):
         """
         Using a DESI-like reference sample.
 
@@ -243,6 +268,33 @@ class HSC_Xcorr(Xcorr):
         self.set_dNdz(self.pz)
 
     
+    def construct_photometric_galaxy_samples(self, verbose=False):
+        """
+        Construct a set of galaxy positions, to constitute the photometric sample
+        in each snapshot.
+        """
+        gal_pos_phots = [] # where to store galaxy positions
+        for i, snapshot in enumerate(self.snapshots):
+            print(f"snapshot {i+1} (z={self.redshifts[i]:.2f}) of {len(self.snapshots)}", flush=True) # !!
+            # instantiate simulation
+            sim = TNGSim(self.sim, snapshot=snapshot)
+            # get the positions of the subhalos that we're counting as galaxies
+            gal_pos_phot = sim.subhalo_pos()[sim.gal_idx('HSC',
+                                                zbin=self.photzbin,
+                                                n=self.ns_phot[i],
+                                                verbose=verbose)]
+            assert False # !!
+            # remove any values which (still not sure why) fall just outside of the boxsize
+            #   (this only happens with one galaxy every few snapshots)
+            gal_pos_phot = tools.remove_values(gal_pos_phot, minimum=0, maximum=sim.boxsize, verbose=verbose)
+            gal_pos_phot -= sim.boxsize / 2  # center at zero
+            assert np.all(gal_pos_phot >= -sim.boxsize / 2) and np.all(gal_pos_phot <= sim.boxsize / 2), \
+                f"galaxy positions out of bounds! min = {np.nanmin(gal_pos_phot):.3f}, max = {np.nanmax(gal_pos_phot):.3f}"
+            gal_pos_phots.append(gal_pos_phot)
+        
+        self.gal_pos_phots = gal_pos_phots
+        
+    
     def construct_spectroscopic_galaxy_samples(self, verbose=False):
         """
         Construct a set of galaxy positions, to constitute the spectroscopic sample
@@ -254,8 +306,8 @@ class HSC_Xcorr(Xcorr):
             # instantiate simulation
             sim = TNGSim(self.sim, snapshot=snapshot)
             # get the positions of the subhalos that we're counting as galaxies
-            gal_pos_spec = sim.subhalo_pos()[sim.gal_idx(self.reference_tracer, self.reference_survey,
-                                                sigma_z=None,
+            gal_pos_spec = sim.subhalo_pos()[sim.gal_idx(self.reference_survey,
+                                                tracer_name=self.reference_tracer,
                                                 n=self.ns[i],
                                                 verbose=verbose)]
             # remove any values which (still not sure why) fall just outside of the boxsize
@@ -267,3 +319,21 @@ class HSC_Xcorr(Xcorr):
             gal_pos_specs.append(gal_pos_spec)
         
         self.gal_pos_specs = gal_pos_specs
+
+    """
+    primary cross-correlation calculation
+    """
+    def compute_angular_xcorrs(self, verbose=False):
+        """
+        Compute the angular cross-correlation in each snapshot from the projected cross-correlation of the
+        photometric and spectroscopic samples.
+        And the linear theory prediction.
+        """
+
+        # PAIR COUNTS
+        self.compute_wthetax_from_wps_pair_counts(cross=True, verbose=verbose)
+            # cross = False means to only compute pair counts from the spectroscopic galaxy samples
+            #   (since for the SPHEREx case we don't construct a set of photometric galaxy positions)
+
+        # LINEAR THEORY
+        self.compute_wthetax_linear_theory(cross=True, verbose=verbose)

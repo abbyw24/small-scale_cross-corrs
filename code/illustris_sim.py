@@ -12,7 +12,7 @@ import os
 import sys
 
 from corrfuncs import compute_xi_cross
-from survey_params_gal import eBOSS_param, DESI_param, SPHEREx_param
+from survey_params_gal import eBOSS_param, DESI_param, SPHEREx_param, HSC_param
 import tools
 
 class TNGSim():
@@ -167,7 +167,7 @@ class TNGSim():
 
     """ SURVEY EMULATION """
 
-    def survey_params(self, survey_name, tracer_name, sigma_z=None):
+    def survey_params(self, survey_name, tracer_name=None, sigma_z=None, zbin=None):
         """
         Calculate the target galaxy number density (function of redshift) for a specific survey, using survey_params_gal.py.
         """
@@ -177,12 +177,14 @@ class TNGSim():
             params = DESI_param(z=self.redshift, tracer_name=tracer_name)
         elif survey_name == 'SPHEREx':
             params = SPHEREx_param(z=self.redshift, sigma_z=sigma_z)
+        elif survey_name == 'HSC':
+            params = HSC_param(z=self.redshift, zbin=zbin)
         else:
             raise ValueError(f"{survey_name} is not a valid survey name")
         return params
 
 
-    def target_N(self, tracer_name, survey='DESI', sigma_z=None, n=None, verbose=False):
+    def target_N(self, survey_name, tracer_name=None, sigma_z=None, zbin=None, n=None, verbose=False):
         """
         Compute the target number of tracers from TNG boxsize and target number density.
         Target number density is computed as a function of tracer type ('LRG' or 'ELG') and survey, \
@@ -195,9 +197,9 @@ class TNGSim():
             if verbose:
                 print(f"input number density: {self.n.value:.2e} (h/Mpc)^3")
         else:
-            self.n = self.survey_params(survey, tracer_name, sigma_z).n_Mpc3 * (cu.littleh / u.Mpc)**3
+            self.n = self.survey_params(survey_name, tracer_name, sigma_z=sigma_z, zbin=zbin).n_Mpc3 * (cu.littleh / u.Mpc)**3
             if verbose:
-                print(f"{tracer_name} number density for {survey} at z={self.redshift}: {self.n.value:.2e} (h/Mpc)^3")
+                print(f"number density for {survey_name} {tracer_name} at z={self.redshift}: {self.n.value:.2e} (h/Mpc)^3")
         if verbose:
             print(f"target number of subhalos: {int(V * self.n)}")
         return int(V * self.n)
@@ -218,7 +220,7 @@ class TNGSim():
         return np.where(sSFR_cut)[0]
 
 
-    def gal_idx(self, tracer_name, survey='DESI', sigma_z=None, sSFR_cutval=-9.09, n=None, verbose=False):
+    def gal_idx(self, survey_name, tracer_name=None, sigma_z=None, zbin=None, sSFR_cutval=-9.09, n=None, verbose=False):
         """
         Make cuts in subhalo sSFR and stellar mass to select for LRGs/ELGs and reach a target galaxy number density,
         as outlined in Sullivan, Prijon, & Seljak (2023).
@@ -231,26 +233,36 @@ class TNGSim():
         """
 
         # specific star formation rate (sSFR) = star formation rate per stellar mass
-        if survey.upper()=='SPHEREX':
+        if survey_name.upper() == 'SPHEREX' or survey_name.upper() == 'HSC':
             sSFR_cut = np.arange(len(self.subhalo_pos()))
         else:
             sSFR_cut = self.idx_sSFR_cut(tracer_name, sSFR_cutval)  # length == nsubhalos
 
         # target number of galaxies = volume * number density
-        target_N = self.target_N(tracer_name, survey, sigma_z, n, verbose)  # int
+        target_N = self.target_N(tracer_name, survey_name, sigma_z=sigma_z, zbin=zbin, n=n, verbose=verbose)  # int
+
+        # print(f"{len(sSFR_cut)} total subhalos:")
+        # print(f"\t{sum(self.SFR() > 0)} have nonzero SFR")
+        # print(f"\t{sum(self.stellar_mass() > 0)} have nonzero stellar mass")
+        # print(f"\t{sum((self.stellar_mass() > 0) & (self.SFR() > 0))} have nonzero SFR and nonzero stellar mass")
 
         # get the indices of the subhalos that have nonzero SFR, nonzero stellar mass, and meet sSFR criteria
         idx = np.intersect1d(self.idx_nonzero(), sSFR_cut)  # length < nsubhalos
+        print(f"{len(idx)} total to return")
         # abundance matching -> sort subhalos that meet the criteria by decreasing stellar mass
         idx_mass_sorted = idx[np.argsort(self.stellar_mass()[idx])[::-1]]  # length < nsubhalos
         assert len(idx) == len(idx_mass_sorted)
+        if len(idx_mass_sorted[:target_N]) < target_N:
+            print(f"warning: number of subhalos ({len(idx_mass_sorted[:target_N])}) does not match target ({target_N})")
+        # assert len(idx_mass_sorted[:target_N]) == target_N, \
+        #     f"number of subhalos ({len(idx_mass_sorted[:target_N])}) does not match target ({target_N})"
         
         # and only return the first target_N
         return idx_mass_sorted[:target_N]
 
 
     """ CORRELATION FUNCTIONS """
-    def galxdm(self, tracer_name, survey='DESI', n=None, dm_nx=100, verbose=False,
+    def galxdm(self, survey_name, tracer_name=None, n=None, dm_nx=100, verbose=False,
                 randmult=3, rmin=0.1, rmax=50., nbins=20, nthreads=24, logbins=True, periodic=True):
 
         # dark matter particle coordinates -> underlying matter field
@@ -259,7 +271,7 @@ class TNGSim():
             dm_subsample = tools.get_subsample(dm_pos, dm_nx, verbose=verbose)
         
         # galaxy coordinates -> tracers
-        gal_pos = self.subhalo_pos()[self.gal_idx(tracer_name, survey, n=n, verbose=verbose)]
+        gal_pos = self.subhalo_pos()[self.gal_idx(survey_name, tracer_name, n=n, verbose=verbose)]
 
         # compute cross correlation
         ravg, xi = compute_xi_cross(gal_pos.value, dm_subsample.value, randmult, rmin, rmax, nbins,

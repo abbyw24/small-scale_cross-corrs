@@ -4,10 +4,14 @@ import astropy.units as u
 import astropy.cosmology.units as cu
 import astropy.constants as c
 from astropy.cosmology import Planck15 as cosmo
+from mcfit import P2xi
+import symbolic_pofk.syrenhalofit as syrenhalofit
 
 """
 CONVERSIONS
 """
+def a(redshift):
+    return 1 / (1 + redshift)
 def perh():
     return (cosmo.H(0.) / 100 * u.Mpc / u.km * u.s) / cu.littleh
 
@@ -22,6 +26,11 @@ def theta_to_r_comov(theta, redshift):
     return (theta * u.deg * cosmo.kpc_comoving_per_arcmin(redshift).to(u.Mpc/u.deg) * perh())
 def r_comov_to_theta(r, redshift):
     return (r / (cosmo.kpc_comoving_per_arcmin(redshift).to(u.Mpc/u.deg) * perh()))
+
+def r_comov_to_r(r_comov, redshift):
+    return r_comov * a(redshift)
+def r_to_r_comov(r, redshift):
+    return r / a(redshift)
 
 def CartesiantoEquatorial(pos, observer=[0,0,0]):
     """
@@ -65,18 +74,43 @@ def get_ra_dec(sample, chi):
 
 
 """
-LINEAR 2-PT CORRELATION FUNCTION
+2-PT CORRELATION FUNCTIONS & POWER SPECTRA
 """
 def linear_2pcf(z, r, cosmo_model='planck15', runit=u.Mpc/cu.littleh): # , k=np.logspace(-5.0, 2.0, 500)):
     """
     Return the 2-pt. matter autocorrelation function at redshift `z` and scales `r` as predicted by linear theory from Colossus.
     """
     cosmo = cosmology.setCosmology(cosmo_model, persistence='r')  # persistence='r' sets this to read-only
-    # matter power spectrum
-    # Pk = cosmo.matterPowerSpectrum(k)  # defaults to the approximation of Eisenstein & Hu 1998
-    # 2-pt. matter-matter correlation function is an integral over the power spectrum:
-    r = r.to(runit).value if isinstance(r, u.Quantity) else r
+    r = r.to(runit).value if isinstance(r, u.Quantity) else r       # ensures that any units agree
     return cosmo.correlationFunction(r, z=z) 
+
+def nonlinear_2pcf(z, cosmo_model='planck15'):
+    """
+    Return the 2-pt. nonlinear matter autocorrelation function at redshift `z`. Uses the `symbolic_pofk` package (Bartlett et al. 2024)
+    to get the nonlinear P(k)
+    """
+    cosmo = cosmology.setCosmology(cosmo_model, persistence='r')  # persistence='r' sets this to read-only
+
+    # Define k range
+    kmin = 1e-3
+    kmax = 10
+    nk = 400
+    k = np.logspace(np.log10(kmin), np.log10(kmax), nk)
+
+    pk_halofit = syrenhalofit.run_halofit(k, cosmo.sigma8, cosmo.Om(z), cosmo.Ob(z), cosmo.h, cosmo.ns, a(z), emulator='fiducial',
+                                      extrapolate=True, which_params='Bartlett', add_correction=False)
+
+    
+
+    return k, pk_halofit
+
+def Pk_to_xi(k, Pk):
+    """
+    Transform an input 3D power spectrum P(k) to its correlation function xi(r).
+    """
+    r, xi = mcfit.P2xi(k)(P)
+
+    return r, xi
 
 
 """

@@ -25,23 +25,26 @@ def main():
     # the photo-z bins
     photzbins = np.arange(0, 4)
 
-    # galaxy number density
-    density = 2e-3 * (cu.littleh / u.Mpc)**3
+    # # spectroscopic galaxy number density
+    # density = 2e-4 * (cu.littleh / u.Mpc)**3
 
     # reference tracers
     tracers = ['ELG', 'LRG']
 
     # other arguments for the analysis
-    hsc_kwargs = dict(density_type='fixed', density=density, reference_survey='DESI')
+    hsc_kwargs = dict(density_type='target', density=None, reference_survey='DESI')
 
     for (snapshots, photzbin) in zip(snapshotss, photzbins):
-        for tracer in tracers:
-            run_analysis(snapshots, photzbin, reference_tracer=tracer, overwrite=True, **hsc_kwargs)
+        # !! photzbin
+        if photzbin == 3:
+            for tracer in tracers:
+                run_analysis(snapshots, photzbin, reference_tracer=tracer, overwrite=True, verbose=True, **hsc_kwargs)
 
 
-def run_analysis(snapshots, photzbin, overwrite=False, **hsc_kwargs):
+def run_analysis(snapshots, photzbin, overwrite=False, verbose=True, **hsc_kwargs):
 
-    print(f"starting snapshots {min(snapshots)}-{max(snapshots)}, photzbin={photzbin}")
+    if verbose:
+        print(f"starting snapshots {min(snapshots)}-{max(snapshots)}, photzbin={photzbin}", flush=True)
 
     # instantiate spherex set for cross-correlation
     X = HSC_Xcorr(snapshots, photzbin, **hsc_kwargs)
@@ -57,7 +60,7 @@ def run_analysis(snapshots, photzbin, overwrite=False, **hsc_kwargs):
         os.makedirs(save_dir)
     save_fn = os.path.join(save_dir, f'xcorr_object.pkl')
     if os.path.exists(save_fn) and not overwrite:
-        print(f"already exists at {save_fn}")
+        print(f"already exists at {save_fn}", flush=True)
         return
 
     # plot key info for this set
@@ -79,8 +82,35 @@ def run_analysis(snapshots, photzbin, overwrite=False, **hsc_kwargs):
     # save
     fig.savefig(os.path.join(save_dir, 'densities_and_dNdz.png'))
 
-    # construct the spectroscopic galaxies in each snapshot
+    # construct the photometric and spectroscopic galaxies in each snapshot
+    if verbose:
+        print(f"constructing photometric galaxy samples", flush=True)
+    X.construct_photometric_galaxy_samples()
+    if verbose:
+        print(f"constructing spectroscopic galaxy samples", flush=True)
     X.construct_spectroscopic_galaxy_samples()
+
+    # plot photometric sample
+    norm = mpl.colors.Normalize(vmin=min(X.redshifts), vmax=max(X.redshifts))
+    smap = mpl.cm.ScalarMappable(norm=norm, cmap='turbo')
+    fig, ax = plt.subplots(figsize=(15,2.6), tight_layout=True)
+    for i, chi in enumerate(X.chis):
+        gal_pos_phot_ = np.copy(X.gal_pos_phots[i])
+        gal_pos_phot_[:,2] += chi
+        kwargs = dict(c=smap.to_rgba(X.redshifts[i]), ls='None')
+        ax.plot(gal_pos_phot_[:,2], gal_pos_phot_[:,0], marker=',', alpha=0.4, **kwargs)
+        ax.plot(chi, 0, marker='o', c=smap.to_rgba(X.redshifts[i]), mec='k', zorder=100)
+        ax.axvline((chi - X.boxsize/2).value, alpha=0.8, **kwargs)
+        ax.axvline((chi + X.boxsize/2).value, alpha=0.8, **kwargs)
+    ax.axhline(0, c='k', alpha=0.5, lw=0.5)
+    ax.set_aspect('equal')
+    ax.set_xlim((min(X.chis)-0.6*X.boxsize).value, (max(X.chis)+0.6*X.boxsize).value)
+    ax.set_xlabel(r'LOS comoving distance $\chi$ (Mpc/h)')
+    ax.set_ylabel(r'LOS $\perp$ (Mpc/h)')
+    ax.set_title(f'{X.sim} snapshots: HSC-like galaxies')
+    fig.colorbar(smap, ax=ax, label='Redshift $z$', pad=0.01)
+    # save
+    fig.savefig(os.path.join(save_dir, 'gal_pos_phots.png'))
 
     # plot reference sample
     norm = mpl.colors.Normalize(vmin=min(X.redshifts), vmax=max(X.redshifts))
@@ -105,12 +135,13 @@ def run_analysis(snapshots, photzbin, overwrite=False, **hsc_kwargs):
     fig.savefig(os.path.join(save_dir, 'gal_pos_specs.png'))
 
     # compute angular cross-correlation
-    X.compute_angular_xcorrs()
+    X.compute_angular_xcorrs(verbose=True)
     
     # save the class
     with open(save_fn, 'wb') as output:
         pickle.dump(X, output)
-    print(f"saved class instance to {save_fn}")
+    if verbose:
+        print(f"saved class instance to {save_fn}", flush=True)
 
 
 if __name__=='__main__':

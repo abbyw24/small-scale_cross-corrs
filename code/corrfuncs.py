@@ -137,8 +137,8 @@ def compute_wtheta_auto(ra, dec, ra_rand, dec_rand, bins, nthreads=12):
 
 
 # CROSS-CORRELATIONS #
-def compute_xi_cross(d1, d2, randmult, rmin, rmax, nbins, boxsize=None, zrange=None,
-                        logbins=True, periodic=True, nthreads=12, rr_fn=None, prints=False):
+def compute_xi_cross(d1, d2, rmin, rmax, nbins, boxsize=None, zrange=None, randmult=3,
+                        logbins=True, periodic=True, nthreads=12, nrepeats=1):
     """Estimate the 3D 2-pt. cross-correlation function."""
 
     # set up data: random set goes with tracers
@@ -149,77 +149,61 @@ def compute_xi_cross(d1, d2, randmult, rmin, rmax, nbins, boxsize=None, zrange=N
     # unpack
     xd1, yd1, zd1 = d1_set.T
     xd2, yd2, zd2 = d2_set.T
-    x_rand, y_rand, z_rand = rand_set.T
+    xr, yr, zr = rand_set.T
 
-    d1d2_res = DD(0, nthreads, r_edges, xd1, yd1, zd1, X2=xd2, Y2=yd2, Z2=zd2, boxsize=boxsize, periodic=periodic, output_ravg=True)
-    if prints:
-        print("D1D2 calculated")
-    d1r_res = DD(0, nthreads, r_edges, xd1, yd1, zd1, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
-    if prints:
-        print("D1R calculated")
-    d2r_res = DD(0, nthreads, r_edges, xd2, yd2, zd2, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
-    if prints:
-        print("D2R calculated")
+    xis = np.full((nrepeats, nbins), np.nan)
+    for j in range(nrepeats):
+
+        d1d2_res = DD(0, nthreads, r_edges, xd1, yd1, zd1, X2=xd2, Y2=yd2, Z2=zd2, boxsize=boxsize, periodic=periodic, output_ravg=True)
+        d1r_res = DD(0, nthreads, r_edges, xd1, yd1, zd1, X2=xr, Y2=yr, Z2=zr, boxsize=boxsize, periodic=periodic)
+        d2r_res = DD(0, nthreads, r_edges, xd2, yd2, zd2, X2=xr, Y2=yr, Z2=zr, boxsize=boxsize, periodic=periodic)
+        rr_res = DD(1, nthreads, r_edges, xr, yr, zr, boxsize=boxsize, periodic=periodic)
+
+        # d1d2 = np.array([x['npairs'] for x in d1d2_res], dtype=float)
+        # d1r = np.array([x['npairs'] for x in d1r_res], dtype=float)
+        # d2r = np.array([x['npairs'] for x in d2r_res], dtype=float)
+        # rr = np.array([x['npairs'] for x in rr_res], dtype=float)
+
+        # turn pair counts into an actual correlation function: Landy-Szalay estimator
+        xis[j] = Corrfunc.utils.convert_3d_counts_to_cf(nd1, nd2, nr, nr, d1d2_res, d1r_res, d2r_res, rr_res)
     
-    if rr_fn:
-        rr_res = np.load(rr_fn, allow_pickle=True)
-    else:
-        rr_res = DD(1, nthreads, r_edges, x_rand, y_rand, z_rand, boxsize=boxsize, periodic=periodic)
-    if prints:
-        print("RR calculated")
+    xi = np.nanmean(xis, axis=0)    # get the mean across the runs
 
-    # d1d2 = np.array([x['npairs'] for x in d1d2_res], dtype=float)
-    # d1r = np.array([x['npairs'] for x in d1r_res], dtype=float)
-    # d2r = np.array([x['npairs'] for x in d2r_res], dtype=float)
-    # rr = np.array([x['npairs'] for x in rr_res], dtype=float)
+    return r_avg, xi
 
-    results_xi = Corrfunc.utils.convert_3d_counts_to_cf(nd1, nd2, nr, nr, d1d2_res, d1r_res, d2r_res, rr_res)
-    if prints:
-        print("3d counts converted to cf")
-
-    return r_avg, results_xi
-
-def compute_wp_cross(d1, d2, randmult, rpmin, rpmax, nbins, pimax, boxsize=None, zrange=None,
-                        logbins=True, periodic=True, nthreads=12, rr_fn=None, prints=False):
+def compute_wp_cross(d1, d2, rpmin, rpmax, nrpbins, pimax, boxsize=None, zrange=None, randmult=3,
+                        logbins=True, periodic=True, nthreads=12, nrepeats=1):
     """Estimate the 2D 2-pt. cross-correlation function."""
 
     # set up data: random set goes with tracers
-    dataforcf = set_up_cf_data(d1, randmult, rpmin, rpmax, nbins, data2=d2, boxsize=boxsize,
+    dataforcf = set_up_cf_data(d1, randmult, rpmin, rpmax, nrpbins, data2=d2, boxsize=boxsize,
                                 zrange=zrange, logbins=logbins, dtype='float32')
     rp_edges, rp_avg, nd1, nd2, boxsize, nr, rand_set, d1_set, d2_set = dataforcf.values()
 
     # unpack
     xd1, yd1, zd1 = d1_set.T
     xd2, yd2, zd2 = d2_set.T
-    x_rand, y_rand, z_rand = rand_set.T
+    xr, yr, zr = rand_set.T
 
-    d1d2_res = DDrppi(0, nthreads, pimax, rp_edges, xd1, yd1, zd1, X2=xd2, Y2=yd2, Z2=zd2, boxsize=boxsize, periodic=periodic, output_rpavg=True)
-    if prints:
-        print("D1D2 calculated")
-    d1r_res = DDrppi(0, nthreads, pimax, rp_edges, xd1, yd1, zd1, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
-    if prints:
-        print("D1R calculated")
-    d2r_res = DDrppi(0, nthreads, pimax, rp_edges, xd2, yd2, zd2, X2=x_rand, Y2=y_rand, Z2=z_rand, boxsize=boxsize, periodic=periodic)
-    if prints:
-        print("D2R calculated")
+    wps = np.full((nrepeats, nrpbins), np.nan)
+    for j in range(nrepeats):
+
+        d1d2_res = DDrppi(0, nthreads, pimax, rp_edges, xd1, yd1, zd1, X2=xd2, Y2=yd2, Z2=zd2, boxsize=boxsize, periodic=periodic, output_rpavg=True)
+        d1r_res = DDrppi(0, nthreads, pimax, rp_edges, xd1, yd1, zd1, X2=xr, Y2=yr, Z2=zr, boxsize=boxsize, periodic=periodic)
+        d2r_res = DDrppi(0, nthreads, pimax, rp_edges, xd2, yd2, zd2, X2=xr, Y2=yr, Z2=zr, boxsize=boxsize, periodic=periodic)
+        rr_res = DDrppi(1, nthreads, pimax, rp_edges, xr, yr, zr, boxsize=boxsize, periodic=periodic)
+
+        # d1d2 = np.array([x['npairs'] for x in d1d2_res], dtype=float)
+        # d1r = np.array([x['npairs'] for x in d1r_res], dtype=float)
+        # d2r = np.array([x['npairs'] for x in d2r_res], dtype=float)
+        # rr = np.array([x['npairs'] for x in rr_res], dtype=float)
+
+        # turn pair counts into an actual correlation function: Landy-Szalay estimator
+        wps[j] = Corrfunc.utils.convert_rp_pi_counts_to_wp(nd1, nd2, nr, nr, d1d2_res, d1r_res, d2r_res, rr_res, nrpbins, pimax)
     
-    if rr_fn:
-        rr_res = np.load(rr_fn, allow_pickle=True)
-    else:
-        rr_res = DDrppi(1, nthreads, pimax, rp_edges, x_rand, y_rand, z_rand, boxsize=boxsize, periodic=periodic)
-    if prints:
-        print("RR calculated")
+    wp = np.nanmean(wps, axis=0)    # get the mean across the runs
 
-    d1d2 = np.array([x['npairs'] for x in d1d2_res], dtype=float)
-    d1r = np.array([x['npairs'] for x in d1r_res], dtype=float)
-    d2r = np.array([x['npairs'] for x in d2r_res], dtype=float)
-    rr = np.array([x['npairs'] for x in rr_res], dtype=float)
-
-    results_wp = Corrfunc.utils.convert_rp_pi_counts_to_wp(nd1, nd2, nr, nr, d1d2, d1r, d2r, rr, nbins, pimax)
-    if prints:
-        print("3d counts converted to cf")
-
-    return rp_avg, results_wp
+    return rp_avg, wp
 
 
 def wtheta_cross_PH(ra1, dec1, ra2, dec2, ra_rand2, dec_rand2, bins, nthreads=12):

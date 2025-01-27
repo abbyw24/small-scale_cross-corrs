@@ -72,6 +72,8 @@ class Xcorr():
         # pimax, now that we have the boxsize attribute
         self.pimax = int(self.pimax_frac * self.boxsize.value)
 
+        self._compute_thetas()
+
     
     def set_dNdz(self, dNdz):
         assert len(self.snapshots) == len(dNdz), "length of dNdz must match number of snapshots"
@@ -125,6 +127,15 @@ class Xcorr():
         else:
             return gal_pos_phots
 
+    def _compute_thetas(self):
+
+        theta_avg = np.full((len(self.snapshots), self.nrpbins), np.nan)
+        for i, redshift in enumerate(self.redshifts):
+            theta_edges = tools.r_comov_to_theta(self.rp_edges, redshift).value
+            theta_avg[i] = (theta_edges[1:] + theta_edges[:-1]) / 2
+
+        self.theta_avg = theta_avg
+
     """
     Correlation functions
     """
@@ -142,7 +153,7 @@ class Xcorr():
             if verbose == True:
                 end = '\n' if i == len(gal_pos)-1 else '\r'
                 print(f"computing 3D autocorr. from pair counts:\t{i+1} of {len(self.snapshots)} (z={redshift:.2f})",
-                        end=end)
+                        end=end, flush=True)
             r_avg, xis[i] = corrfuncs.compute_xi_auto(gal_pos_arr,
                                     self.rmin, self.rmax, self.nbins,
                                     randmult=self.randmult, boxsize=self.boxsize, logbins=True,
@@ -166,7 +177,7 @@ class Xcorr():
             if verbose == True:
                 end = '\n' if i == len(gal_pos)-1 else '\r'
                 print(f"computing projected autocorr. from pair counts:\t{i+1} of {len(self.snapshots)} (z={self.redshifts[i]:.2f})",
-                        end=end)
+                        end=end, flush=True)
             rp_avg, wps[i] = corrfuncs.compute_wp_auto(gal_pos_arr,
                                     self.rpmin, self.rpmax, self.nrpbins, self.pimax,
                                     randmult=self.randmult, boxsize=self.boxsize, logbins=True,
@@ -190,7 +201,7 @@ class Xcorr():
             if verbose == True:
                 end = '\n' if i == len(gal_pos_phots)-1 else '\r'
                 print(f"computing projected cross-corr. from pair counts:\t{i+1} of {len(self.snapshots)} (z={self.redshifts[i]:.2f})",
-                        end=end)
+                        end=end, flush=True)
             rp_avg, wpxs[i] = corrfuncs.compute_wp_cross(gal_pos_phots[i], gal_pos_specs[i],
                                                         self.rpmin, self.rpmax, self.nrpbins, self.pimax,
                                                         randmult=self.randmult, boxsize=self.boxsize, logbins=True,
@@ -249,7 +260,7 @@ class Xcorr():
             wps = self.compute_auto_xis(gal_pos_specs, verbose=verbose)
         
         self.wthetax = np.array([
-            self.dNdz[i] * self.wps[i] for i in range(len(self.snapshots))
+            self.dNdz[i] * wps[i] for i in range(len(self.snapshots))
         ])
 
     # def compute_wthetax_from_pair_counts(self, gal_pos_phots=None, gal_pos_specs=None, verbose=True):
@@ -298,13 +309,13 @@ class Xcorr():
         # fetch the spectroscopic galaxies, since we need them no matter what
         gal_pos_specs = self._fetch_gal_pos_specs(gal_pos_specs)
         # compute the bias in the spectroscopic sample
-        bias_spec = self.compute_bias(gal_pos_specs)['biases']
+        bias_spec = self.calculate_bias(gal_pos_specs)['biases']
 
         # if we want to compute the cross-correlation between the photometric and spectroscopic samples,
         #   then we need the bias in the spectroscopic _and_ photometric samples
         if cross == True:
             gal_pos_phots = self._fetch_gal_pos_phots(gal_pos_phots)
-            bias_phot = self.compute_bias(gal_pos_phots)['biases']
+            bias_phot = self.calculate_bias(gal_pos_phots)['biases']
             # the bias term is the photometric bias * the spectroscopic bias
             bias_term = bias_phot * bias_spec
         else:
@@ -324,7 +335,7 @@ class Xcorr():
             self.matter_cf_type = 'dm'
             self.dm_subsample = int(dm_subsample)
             if verbose == True:
-                print("computing autocorr. from dark matter particles")
+                print("computing autocorr. from dark matter particles", flush=True)
             self.compute_xis_dark_matter()
             self.xi_lins = np.array([
                 bias_term[i] * self.xi_dms[i] for i in range(len(self.snapshots))
@@ -384,7 +395,7 @@ class Xcorr():
         for i, redshift in enumerate(self.redshifts):
             if verbose == True:
                 end = '\n' if i == len(self.redshifts)-1 else '\r'
-                print(f"calculating bias:\t{i+1} of {len(self.redshifts)} (z={redshift:.2f})", end=end)
+                print(f"calculating bias:\t{i+1} of {len(self.redshifts)} (z={redshift:.2f})", end=end, flush=True)
             r_avg, biases_r[i] = linear_theory.get_linear_bias(gal_pos[i],
                                         redshift=redshift, boxsize=self.boxsize, method=method,
                                         rmin=rmin, rmax=rmax, nbins=nbins,
@@ -416,9 +427,9 @@ class Xcorr():
     Coordinate transformations
     """
     def theta_to_r_comov(self, theta):  # theta in DEGREES
-        return tools.theta_to_r_comov(theta, np.mean(self.redshifts)).value
+        return tools.theta_to_r_comov(theta, np.mean(self.redshifts)).value # !! check this.. mean of the redshifts seems hacky
     def r_comov_to_theta(self, r):
-        return tools.r_comov_to_theta(r, np.mean(self.redshifts)).value
+        return tools.r_comov_to_theta(r, np.mean(self.redshifts)).value # !! check this.. mean of the redshifts seems hacky
 
 
 # to check monotonicity:

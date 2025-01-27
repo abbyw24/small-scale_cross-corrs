@@ -106,12 +106,12 @@ class TNGSim():
                 subhalo_idx = subhalos['SubhaloFlag']
                 self.nsubhalos = np.sum(subhalo_idx)
                 if verbose:
-                    print(f"removed {np.sum(~subhalo_idx)} flagged subhalos")
+                    print(f"removed {np.sum(~subhalo_idx)} flagged subhalos", flush=True)
             else:
                 self.nsubhalos = len(subhalos['SubhaloFlag'])
                 subhalo_idx = np.full(self.nsubhalos, True)
             if verbose:
-                print(f"loaded the following fields for {self.sim_tag} ({self.nsubhalos} subhalos): \n\t", fields_[1:])
+                print(f"loaded the following fields for {self.sim_tag} ({self.nsubhalos} subhalos): \n\t", fields_[1:], flush=True)
             # we need to remove the 'count' entry before we store data as a table, so each column has the same length
             del subhalos['count']
             if 'SubhaloFlag' in subhalo_info.keys():
@@ -121,13 +121,7 @@ class TNGSim():
             self.subhalo_info = table.hstack([subhalo_info, subhalos]) if hasattr(self, 'subhalo_info') else table.Table(subhalos)
         else:
             if verbose:
-                print("requested fields already loaded!")
-    
-    def idx_nonzero(self):
-        """
-        Boolean array of subhalos (as returned in `_load_subfind_subhalos()`) with nonzero SFR and nonzero stellar mass.
-        """
-        return np.where((self.SFR() > 0) & (self.stellar_mass() > 0))[0]
+                print("requested fields already loaded!", flush=True)
     
     def subhalo_pos(self, unit=u.Mpc/cu.littleh):
         self._load_subfind_subhalos(fields=['SubhaloPos'])
@@ -161,7 +155,7 @@ class TNGSim():
         """
         dm_pos = il.snapshot.loadSubset(self.basepath, self.snapshot, 'dm', ['Coordinates']) * u.kpc / cu.littleh
         if verbose:
-            print(f"loaded {len(dm_pos)} dark matter particles")
+            print(f"loaded {len(dm_pos)} dark matter particles", flush=True)
         return dm_pos.to(unit)
     
 
@@ -171,13 +165,13 @@ class TNGSim():
         """
         Calculate the target galaxy number density (function of redshift) for a specific survey, using survey_params_gal.py.
         """
-        if survey_name == 'eBOSS':
+        if survey_name.upper() == 'EBOSS':
             params = eBOSS_param(z=self.redshift, tracer_name=tracer_name)
-        elif survey_name == 'DESI':
+        elif survey_name.upper() == 'DESI':
             params = DESI_param(z=self.redshift, tracer_name=tracer_name)
-        elif survey_name == 'SPHEREx':
+        elif survey_name.upper() == 'SPHEREx':
             params = SPHEREx_param(z=self.redshift, sigma_z=sigma_z)
-        elif survey_name == 'HSC':
+        elif survey_name.upper() == 'HSC':
             params = HSC_param(z=self.redshift, zbin=zbin)
         else:
             raise ValueError(f"{survey_name} is not a valid survey name")
@@ -195,13 +189,13 @@ class TNGSim():
         if n is not None:
             self.n = n.to((cu.littleh / u.Mpc)**3) if hasattr(n, 'unit') else n * (cu.littleh / u.Mpc)**3
             if verbose:
-                print(f"input number density: {self.n.value:.2e} (h/Mpc)^3")
+                print(f"input number density: {self.n.value:.2e} (h/Mpc)^3", flush=True)
         else:
             self.n = self.survey_params(survey_name, tracer_name, sigma_z=sigma_z, zbin=zbin).n_Mpc3 * (cu.littleh / u.Mpc)**3
             if verbose:
-                print(f"number density for {survey_name} {tracer_name} at z={self.redshift}: {self.n.value:.2e} (h/Mpc)^3")
+                print(f"number density for {survey_name} {tracer_name} at z={self.redshift}: {self.n.value:.2e} (h/Mpc)^3", flush=True)
         if verbose:
-            print(f"target number of subhalos: {int(V * self.n)}")
+            print(f"target number of subhalos: {int(V * self.n)}", flush=True)
         return int(V * self.n)
     
 
@@ -220,7 +214,9 @@ class TNGSim():
         return np.where(sSFR_cut)[0]
 
 
-    def gal_idx(self, survey_name, tracer_name=None, sigma_z=None, zbin=None, sSFR_cutval=-9.09, n=None, verbose=False):
+    def gal_idx(self, survey_name, tracer_name=None,
+                sigma_z=None, zbin=None, sSFR_cutval=-9.09, n=None,
+                discard_zero_stellar_mass=True, discard_zero_SFR=True, verbose=False):
         """
         Make cuts in subhalo sSFR and stellar mass to select for LRGs/ELGs and reach a target galaxy number density,
         as outlined in Sullivan, Prijon, & Seljak (2023).
@@ -233,10 +229,11 @@ class TNGSim():
         """
 
         # specific star formation rate (sSFR) = star formation rate per stellar mass
-        if survey_name.upper() == 'SPHEREX' or survey_name.upper() == 'HSC':
-            sSFR_cut = np.arange(len(self.subhalo_pos()))
+        if survey_name.upper() in ['EBOSS', 'DESI']:
+            idx = self.idx_sSFR_cut(tracer_name, sSFR_cutval)  # length == nsubhalos
         else:
-            sSFR_cut = self.idx_sSFR_cut(tracer_name, sSFR_cutval)  # length == nsubhalos
+            # indices of all subhalos in the snapshot
+            idx = np.arange(len(self.subhalo_pos()))
 
         # target number of galaxies = volume * number density
         target_N = self.target_N(tracer_name, survey_name, sigma_z=sigma_z, zbin=zbin, n=n, verbose=verbose)  # int
@@ -245,18 +242,30 @@ class TNGSim():
         # print(f"\t{sum(self.SFR() > 0)} have nonzero SFR")
         # print(f"\t{sum(self.stellar_mass() > 0)} have nonzero stellar mass")
         # print(f"\t{sum((self.stellar_mass() > 0) & (self.SFR() > 0))} have nonzero SFR and nonzero stellar mass")
+        
+        if discard_zero_stellar_mass == True:
+            # get the indices of the subhalos with nonzero stellar mass
+            idx_stellar_mass = np.where((self.stellar_mass() > 0))[0]   # length < nsubhalos
+            idx = np.intersect1d(idx_stellar_mass, idx)
 
-        # get the indices of the subhalos that have nonzero SFR, nonzero stellar mass, and meet sSFR criteria
-        idx = np.intersect1d(self.idx_nonzero(), sSFR_cut)  # length < nsubhalos
-        print(f"{len(idx)} total to return")
+        if discard_zero_SFR == True:
+            # get the indices of the subhalos with nonzero SFR
+            idx_SFR = np.where((self.SFR() > 0))[0] # length < nsubhalos
+            idx = np.intersect1d(idx_SFR, idx)
+
+        # total number of subhalos in this box which meet the initial criteria (i.e. before cutting to target_N)
+        self.nhalos = len(idx)
+        if verbose:
+            print(f"{self.nhalos} total halos in the snapshot", flush=True)
+        
         # abundance matching -> sort subhalos that meet the criteria by decreasing stellar mass
         idx_mass_sorted = idx[np.argsort(self.stellar_mass()[idx])[::-1]]  # length < nsubhalos
-        assert len(idx) == len(idx_mass_sorted)
-        if len(idx_mass_sorted[:target_N]) < target_N:
-            print(f"warning: number of subhalos ({len(idx_mass_sorted[:target_N])}) does not match target ({target_N})")
+        assert self.nhalos == len(idx_mass_sorted)
+        if self.nhalos < target_N:
+            print(f"warning: number of subhalos ({self.nhalos}) is less than target ({target_N}) at z={self.redshift}", flush=True)
         # assert len(idx_mass_sorted[:target_N]) == target_N, \
         #     f"number of subhalos ({len(idx_mass_sorted[:target_N])}) does not match target ({target_N})"
-        
+
         # and only return the first target_N
         return idx_mass_sorted[:target_N]
 

@@ -373,7 +373,7 @@ class HSC_param:
         self.n_sr = n.to(1 / u.sr)
 
         # total number of galaxies in this redshift bin
-        self.N = self.n_sr * self.survey_area_sr
+        self.N = int(self.n_sr * self.survey_area_sr)
 
         zidx = np.argmin(np.abs(z - self.z))
         self.Pz = Pz[zidx]
@@ -394,7 +394,7 @@ class HSC_param:
         dV = dchi * A * (cosmo.h / cu.littleh)**3 # [(Mpc/h)^3]
 
         # so the target number density is n(z) [(h/Mpc)^3] = N(z) / dV[Mpc^3/h^3]
-        self.n_Mpc3 = self.N_z.value / dV.value
+        self.n_Mpc3 = self.N_z / dV.value
     
 
     def density_table(self):

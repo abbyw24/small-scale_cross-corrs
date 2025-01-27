@@ -268,22 +268,25 @@ class HSC_Xcorr(Xcorr):
         self.set_dNdz(self.pz)
 
     
-    def construct_photometric_galaxy_samples(self, verbose=False):
+    def construct_photometric_galaxy_samples(self, discard_zero_SFR=False, discard_zero_stellar_mass=False, verbose=False):
         """
         Construct a set of galaxy positions, to constitute the photometric sample
         in each snapshot.
+        Note that by default we keep the halos with zero SFR and stellar mass since HSC density is so large.
         """
         gal_pos_phots = [] # where to store galaxy positions
+        nhalos = []        # total number of subhalos in each snapshot before cut to target_N
         for i, snapshot in enumerate(self.snapshots):
-            print(f"snapshot {i+1} (z={self.redshifts[i]:.2f}) of {len(self.snapshots)}", flush=True) # !!
+            # (f"snapshot {i+1} (z={self.redshifts[i]:.2f}) of {len(self.snapshots)}", flush=True)
             # instantiate simulation
             sim = TNGSim(self.sim, snapshot=snapshot)
             # get the positions of the subhalos that we're counting as galaxies
             gal_pos_phot = sim.subhalo_pos()[sim.gal_idx('HSC',
                                                 zbin=self.photzbin,
                                                 n=self.ns_phot[i],
+                                                discard_zero_SFR=discard_zero_SFR,
+                                                discard_zero_stellar_mass=discard_zero_stellar_mass,
                                                 verbose=verbose)]
-            assert False # !!
             # remove any values which (still not sure why) fall just outside of the boxsize
             #   (this only happens with one galaxy every few snapshots)
             gal_pos_phot = tools.remove_values(gal_pos_phot, minimum=0, maximum=sim.boxsize, verbose=verbose)
@@ -291,8 +294,10 @@ class HSC_Xcorr(Xcorr):
             assert np.all(gal_pos_phot >= -sim.boxsize / 2) and np.all(gal_pos_phot <= sim.boxsize / 2), \
                 f"galaxy positions out of bounds! min = {np.nanmin(gal_pos_phot):.3f}, max = {np.nanmax(gal_pos_phot):.3f}"
             gal_pos_phots.append(gal_pos_phot)
+            nhalos.append(sim.nhalos)
         
         self.gal_pos_phots = gal_pos_phots
+        self.nhalos = nhalos
         
     
     def construct_spectroscopic_galaxy_samples(self, verbose=False):
